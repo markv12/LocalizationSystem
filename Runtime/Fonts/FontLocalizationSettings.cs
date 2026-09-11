@@ -57,14 +57,31 @@ public class FontLocalizationSettings : ScriptableObject {
 
     public Material LanguageFontMaterial(string sl, FontLocalizer.Type type) {
         FontLocalizationSetting fls = SettingForLanguage(sl);
+        TMP_FontAsset font = LangFont(sl, type);
+
         switch (type) {
             case FontLocalizer.Type.BlackOutline:
-                return fls.blackOutlinePreset;
+                return fls.blackOutlinePreset != null ? fls.blackOutlinePreset : LocalizationMaterialManager.GetBlackOutline(font);
             case FontLocalizer.Type.WhiteOutline:
-                return fls.whiteOutlinePreset;
+                return fls.whiteOutlinePreset != null ? fls.whiteOutlinePreset : LocalizationMaterialManager.GetWhiteOutline(font);
             case FontLocalizer.Type.Regular:
             default:
-                return fls.regularPreset;
+                return fls.regularPreset != null ? fls.regularPreset : font?.material;
+        }
+    }
+
+    public Material LanguageFontMaterial(string sl, FontLocalizer.OutlineStyle outline, FontLocalizer.Type type = FontLocalizer.Type.Regular) {
+        FontLocalizationSetting fls = SettingForLanguage(sl);
+        TMP_FontAsset font = LangFont(sl, type);
+
+        switch (outline) {
+            case FontLocalizer.OutlineStyle.Black:
+                return fls.blackOutlinePreset != null ? fls.blackOutlinePreset : LocalizationMaterialManager.GetBlackOutline(font);
+            case FontLocalizer.OutlineStyle.White:
+                return fls.whiteOutlinePreset != null ? fls.whiteOutlinePreset : LocalizationMaterialManager.GetWhiteOutline(font);
+            case FontLocalizer.OutlineStyle.None:
+            default:
+                return fls.regularPreset != null ? fls.regularPreset : font?.material;
         }
     }
 
@@ -110,4 +127,5 @@ public class FontLocalizationSettings : ScriptableObject {
             || sl.Equals("vietnamese", StringComparison.OrdinalIgnoreCase);
     }
 }
+
 
