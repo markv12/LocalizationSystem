@@ -1,0 +1,20 @@
+{
+  "name": "com.swste.localization",
+  "version": "1.0.0",
+  "displayName": "Localization System",
+  "description": "Centralized localization system for Unity games supporting TextMeshPro, UI Toolkit, OpenAI Batch API translation, and automated Noto font merging.",
+  "unity": "2022.3",
+  "keywords": [
+    "localization",
+    "i18n",
+    "textmeshpro",
+    "uitoolkit",
+    "openai",
+    "noto",
+    "fonts"
+  ],
+  "dependencies": {
+    "com.unity.ugui": "2.0.0",
+    "com.unity.nuget.newtonsoft-json": "3.2.0"
+  }
+}
