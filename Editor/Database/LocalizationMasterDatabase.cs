@@ -62,7 +62,7 @@ public class LocalizationCategory {
 }
 
 [CreateAssetMenu(fileName = "LocalizationMasterDatabase", menuName = "Localization/Master Database")]
-public class LocalizationMasterDatabase : ScriptableObject {
+public class LocalizationMasterDatabase : ScriptableObject, ISerializationCallbackReceiver {
     public string GameGenre;
     public string GameTone;
     [TextArea(3, 10)]
@@ -73,6 +73,13 @@ public class LocalizationMasterDatabase : ScriptableObject {
     [Tooltip("Additional entry collections for external systems (e.g. Items, Dialogue, Instruments, Scales)")]
     public List<LocalizationCategory> AdditionalCategories = new List<LocalizationCategory>();
 
+    // Backward compatibility for legacy assets that serialized direct lists
+    [SerializeField, HideInInspector]
+    private List<LocalizationEntry> InstrumentEntries;
+
+    [SerializeField, HideInInspector]
+    private List<LocalizationEntry> ScaleEntries;
+
     [LanguageList]
     public List<string> TargetLanguages = new List<string>();
 
@@ -80,6 +87,34 @@ public class LocalizationMasterDatabase : ScriptableObject {
     public string OpenAIModel = "gpt-5.6-luna";
 
     public ReasoningEffort Effort = ReasoningEffort.Low;
+
+    public void OnBeforeSerialize() { }
+
+    public void OnAfterDeserialize() {
+        if (AdditionalCategories == null) AdditionalCategories = new List<LocalizationCategory>();
+
+        if (InstrumentEntries != null && InstrumentEntries.Count > 0) {
+            var cat = AdditionalCategories.Find(c => c.CategoryName.Equals("Instruments", StringComparison.OrdinalIgnoreCase));
+            if (cat == null) {
+                cat = new LocalizationCategory("Instruments");
+                AdditionalCategories.Add(cat);
+            }
+            if (cat.Entries == null || cat.Entries.Count == 0) {
+                cat.Entries = new List<LocalizationEntry>(InstrumentEntries);
+            }
+        }
+
+        if (ScaleEntries != null && ScaleEntries.Count > 0) {
+            var cat = AdditionalCategories.Find(c => c.CategoryName.Equals("Scales", StringComparison.OrdinalIgnoreCase));
+            if (cat == null) {
+                cat = new LocalizationCategory("Scales");
+                AdditionalCategories.Add(cat);
+            }
+            if (cat.Entries == null || cat.Entries.Count == 0) {
+                cat.Entries = new List<LocalizationEntry>(ScaleEntries);
+            }
+        }
+    }
 
     public IEnumerable<LocalizationEntry> AllEntries {
         get {
