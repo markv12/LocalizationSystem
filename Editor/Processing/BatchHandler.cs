@@ -13,13 +13,14 @@ public static class BatchHandler {
     private const int MaxCompletionTokens = 16000;
     public const int ChunkSize = 20;
 
-    public static List<object> BuildRequests(LocalizationMasterDatabase database, List<string> targetLanguages, out List<LanguageTranslation> pending) {
+    public static List<object> BuildRequests(LocalizationMasterDatabase database, List<string> targetLanguages, out List<LanguageTranslation> pending, IEnumerable<LocalizationEntry> entriesToProcess = null) {
         var requests = new List<object>();
         pending = new List<LanguageTranslation>();
+        var targetEntries = entriesToProcess ?? database.AllEntries;
 
         foreach (var lang in targetLanguages) {
             var toTranslate = new List<LocalizationEntry>();
-            foreach (var entry in database.AllEntries) {
+            foreach (var entry in targetEntries) {
                 var t = entry.GetTranslation(lang);
                 if (t == null || (t.Status != TranslationStatus.Untranslated && t.Status != TranslationStatus.Dirty)) continue;
                 toTranslate.Add(entry);
@@ -35,14 +36,14 @@ public static class BatchHandler {
         return requests;
     }
 
-    public static void SendBatchRequest(LocalizationMasterDatabase database, List<string> targetLanguages) {
+    public static void SendBatchRequest(LocalizationMasterDatabase database, List<string> targetLanguages, IEnumerable<LocalizationEntry> entriesToProcess = null) {
         string apiKey = OpenAIBatchAPI.GetApiKey();
         if (string.IsNullOrEmpty(apiKey)) {
             Debug.LogError("[Localization] API Key missing in .env file (OPENAI_API_KEY).");
             return;
         }
 
-        var requests = BuildRequests(database, targetLanguages, out List<LanguageTranslation> pending);
+        var requests = BuildRequests(database, targetLanguages, out List<LanguageTranslation> pending, entriesToProcess);
 
         if (requests.Count == 0) {
             Debug.LogWarning("[Localization] No strings to translate.");

@@ -21,11 +21,13 @@ public static class LocalizationProcessor {
         }
     }
 
-    public static void PrepareTranslationBatch(LocalizationMasterDatabase database) {
+    public static void PrepareTranslationBatch(LocalizationMasterDatabase database, IEnumerable<LocalizationEntry> entriesToProcess = null) {
         if (database == null) return;
 
         database.TargetLanguages.Sort((a, b) =>
             SteamLanguageList.GetSortIndex(a).CompareTo(SteamLanguageList.GetSortIndex(b)));
+
+        var targetEntries = (entriesToProcess ?? database.AllEntries).ToList();
 
         int newEntries = 0;
         int dirtyEntries = 0;
@@ -34,7 +36,7 @@ public static class LocalizationProcessor {
         var languagesAffected = new HashSet<string>();
 
         // Cleanup: remove translations for languages no longer in TargetLanguages
-        foreach (var entry in database.AllEntries) {
+        foreach (var entry in targetEntries) {
             int initialCount = entry.Translations.Count;
             entry.Translations.RemoveAll(t => !database.TargetLanguages.Contains(t.LanguageCode, System.StringComparer.OrdinalIgnoreCase));
             removedTranslations += (initialCount - entry.Translations.Count);
@@ -45,7 +47,7 @@ public static class LocalizationProcessor {
         }
 
         foreach (var lang in database.TargetLanguages) {
-            foreach (var entry in database.AllEntries) {
+            foreach (var entry in targetEntries) {
                 string currentHash = GenerateHash(entry.EnglishText, entry.Context);
                 var translation = entry.GetTranslation(lang);
                 bool isPending = false;
@@ -72,7 +74,7 @@ public static class LocalizationProcessor {
             }
         }
 
-        foreach (var entry in database.AllEntries) {
+        foreach (var entry in targetEntries) {
             entry.Translations.Sort((a, b) =>
                 SteamLanguageList.GetSortIndex(a.LanguageCode).CompareTo(SteamLanguageList.GetSortIndex(b.LanguageCode)));
         }
@@ -80,7 +82,7 @@ public static class LocalizationProcessor {
         EditorUtility.SetDirty(database);
         AssetDatabase.SaveAssets();
 
-        var requests = BatchHandler.BuildRequests(database, database.TargetLanguages, out _);
+        var requests = BatchHandler.BuildRequests(database, database.TargetLanguages, out _, targetEntries);
         if (requests.Count > 0) {
             string tempDir = Path.GetFullPath(Path.Combine(Application.dataPath, "..", "Temp"));
             Directory.CreateDirectory(tempDir);
@@ -99,11 +101,12 @@ public static class LocalizationProcessor {
                   $"- Estimated Batch Size: ~{(totalStringsToTranslate * 50)} tokens (rough estimate)");
     }
 
-    public static void ResetPendingStatuses(LocalizationMasterDatabase database) {
+    public static void ResetPendingStatuses(LocalizationMasterDatabase database, IEnumerable<LocalizationEntry> entriesToProcess = null) {
         if (database == null) return;
 
+        var targetEntries = entriesToProcess ?? database.AllEntries;
         int resetCount = 0;
-        foreach (var entry in database.AllEntries) {
+        foreach (var entry in targetEntries) {
             string currentHash = GenerateHash(entry.EnglishText, entry.Context);
             foreach (var lang in database.TargetLanguages) {
                 var translation = entry.GetTranslation(lang);
@@ -124,9 +127,10 @@ public static class LocalizationProcessor {
         Debug.Log($"[Localization] Reset {resetCount} stuck entries back to Untranslated/Dirty.");
     }
 
-    public static void ClearBatchIDs(LocalizationMasterDatabase database) {
+    public static void ClearBatchIDs(LocalizationMasterDatabase database, IEnumerable<LocalizationEntry> entriesToProcess = null) {
         if (database == null) return;
-        foreach (var entry in database.AllEntries) {
+        var targetEntries = entriesToProcess ?? database.AllEntries;
+        foreach (var entry in targetEntries) {
             foreach (var lang in database.TargetLanguages) {
                 var translation = entry.GetTranslation(lang);
                 if (translation != null) translation.BatchID = string.Empty;
@@ -138,10 +142,11 @@ public static class LocalizationProcessor {
         Debug.Log($"[Localization] Cleared All Batch IDs.");
     }
 
-    public static void ExportLanguageCSV(LocalizationMasterDatabase database, string langCode) {
+    public static void ExportLanguageCSV(LocalizationMasterDatabase database, string langCode, IEnumerable<LocalizationEntry> entriesToProcess = null) {
         string path = Path.Combine(Application.dataPath, $"{langCode}.csv");
         var rows = new List<List<string>> { new List<string> { "key", "english", langCode } };
-        foreach (var entry in database.AllEntries) {
+        var targetEntries = entriesToProcess ?? database.AllEntries;
+        foreach (var entry in targetEntries) {
             var translation = entry.GetTranslation(langCode);
             rows.Add(new List<string> {
                 entry.Key ?? "",
