@@ -72,6 +72,7 @@ public class LocalizationMasterDatabaseEditor : Editor {
                     Debug.Log("[Localization] No machine-translated strings found to clear.");
                 }
             }
+        }
         EditorGUILayout.EndHorizontal();
 
         OnCustomDatabaseGUI?.Invoke((LocalizationMasterDatabase)target);
