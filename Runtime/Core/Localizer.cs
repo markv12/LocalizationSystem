@@ -1,7 +1,8 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
+using TextCoreFontAsset = UnityEngine.TextCore.Text.FontAsset;
 
 public static partial class Localizer {
     public const string DEFAULT_LANGUAGE = "english";
@@ -157,7 +158,7 @@ public static partial class Localizer {
     public static Material CurrentLangFontMaterial(FontLocalizer.OutlineStyle outline, FontLocalizer.Type type = FontLocalizer.Type.Regular) => 
         FontLocalizationSettings.Instance != null ? FontLocalizationSettings.Instance.LanguageFontMaterial(currentLanguage, outline, type) : null;
 
-    public static Font CurrentLangUIToolkitFont(FontLocalizer.Type type = FontLocalizer.Type.Regular) => 
+    public static TextCoreFontAsset CurrentLangUIToolkitFont(FontLocalizer.Type type = FontLocalizer.Type.Regular) => 
         FontLocalizationSettings.Instance != null ? FontLocalizationSettings.Instance.LangUIToolkitFont(currentLanguage, type) : null;
 }
 

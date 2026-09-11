@@ -2,6 +2,7 @@ using System;
 using TMPro;
 using UnityEngine;
 using UnityEngine.Serialization;
+using TextCoreFontAsset = UnityEngine.TextCore.Text.FontAsset;
 
 [CreateAssetMenu(fileName = "FontLocalizationSettings", menuName = "Localization/Font Localization Settings")]
 public class FontLocalizationSettings : ScriptableObject {
@@ -30,17 +31,13 @@ public class FontLocalizationSettings : ScriptableObject {
         [FormerlySerializedAs("fontAsset")]
         public TMP_FontAsset FontAsset;
 
-        public Material regularPreset;
-        public Material blackOutlinePreset;
-        public Material whiteOutlinePreset;
-
         [FormerlySerializedAs("regularUIToolkitFont")]
-        public Font uiToolkitFont;
+        public TextCoreFontAsset uiToolkitFont;
 
         public TMP_FontAsset titleFont;
-        public Font titleUIToolkitFont;
+        public TextCoreFontAsset titleUIToolkitFont;
         public TMP_FontAsset paragraphFont;
-        public Font paragraphUIToolkitFont;
+        public TextCoreFontAsset paragraphUIToolkitFont;
     }
 
     public TMP_FontAsset LangFont(string sl, FontLocalizer.Type type = FontLocalizer.Type.Regular) {
@@ -56,47 +53,42 @@ public class FontLocalizationSettings : ScriptableObject {
     }
 
     public Material LanguageFontMaterial(string sl, FontLocalizer.Type type) {
-        FontLocalizationSetting fls = SettingForLanguage(sl);
         TMP_FontAsset font = LangFont(sl, type);
 
         switch (type) {
             case FontLocalizer.Type.BlackOutline:
-                return fls.blackOutlinePreset != null ? fls.blackOutlinePreset : LocalizationMaterialManager.GetBlackOutline(font);
+                return LocalizationMaterialManager.GetBlackOutline(font);
             case FontLocalizer.Type.WhiteOutline:
-                return fls.whiteOutlinePreset != null ? fls.whiteOutlinePreset : LocalizationMaterialManager.GetWhiteOutline(font);
+                return LocalizationMaterialManager.GetWhiteOutline(font);
             case FontLocalizer.Type.Regular:
-                return fls.regularPreset != null ? fls.regularPreset : font?.material;
             default:
                 return font?.material;
         }
     }
 
     public Material LanguageFontMaterial(string sl, FontLocalizer.OutlineStyle outline, FontLocalizer.Type type = FontLocalizer.Type.Regular) {
-        FontLocalizationSetting fls = SettingForLanguage(sl);
         TMP_FontAsset font = LangFont(sl, type);
 
         switch (outline) {
             case FontLocalizer.OutlineStyle.Black:
-                return fls.blackOutlinePreset != null ? fls.blackOutlinePreset : LocalizationMaterialManager.GetBlackOutline(font);
+                return LocalizationMaterialManager.GetBlackOutline(font);
             case FontLocalizer.OutlineStyle.White:
-                return fls.whiteOutlinePreset != null ? fls.whiteOutlinePreset : LocalizationMaterialManager.GetWhiteOutline(font);
+                return LocalizationMaterialManager.GetWhiteOutline(font);
             case FontLocalizer.OutlineStyle.None:
             default:
-                return (type == FontLocalizer.Type.Regular && fls.regularPreset != null) ? fls.regularPreset : font?.material;
+                return font?.material;
         }
     }
 
-    public Font LangUIToolkitFont(string sl, FontLocalizer.Type type = FontLocalizer.Type.Regular) {
+    public TextCoreFontAsset LangUIToolkitFont(string sl, FontLocalizer.Type type = FontLocalizer.Type.Regular) {
         FontLocalizationSetting fls = SettingForLanguage(sl);
         switch (type) {
             case FontLocalizer.Type.Title:
-                if (fls.titleUIToolkitFont != null) return fls.titleUIToolkitFont;
-                return fls.titleFont != null ? fls.titleFont.sourceFontFile : (fls.uiToolkitFont != null ? fls.uiToolkitFont : fls.FontAsset?.sourceFontFile);
+                return fls.titleUIToolkitFont != null ? fls.titleUIToolkitFont : fls.uiToolkitFont;
             case FontLocalizer.Type.Paragraph:
-                if (fls.paragraphUIToolkitFont != null) return fls.paragraphUIToolkitFont;
-                return fls.paragraphFont != null ? fls.paragraphFont.sourceFontFile : (fls.uiToolkitFont != null ? fls.uiToolkitFont : fls.FontAsset?.sourceFontFile);
+                return fls.paragraphUIToolkitFont != null ? fls.paragraphUIToolkitFont : fls.uiToolkitFont;
             default:
-                return fls.uiToolkitFont != null ? fls.uiToolkitFont : fls.FontAsset?.sourceFontFile;
+                return fls.uiToolkitFont;
         }
     }
 
