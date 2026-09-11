@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using TMPro;
 using UnityEngine;
 using UnityEngine.Serialization;
@@ -7,6 +7,7 @@ using UnityEngine.Serialization;
 public class FontLocalizationSettings : ScriptableObject {
     [FormerlySerializedAs("latinBasic")]
     public FontLocalizationSetting english;
+    [FormerlySerializedAs("latinExtended")]
     public FontLocalizationSetting other;
 
     [Tooltip("Enable if your project distinguishes Latin Basic from Latin Extended languages with diacritics.")]
@@ -94,7 +95,11 @@ public class FontLocalizationSettings : ScriptableObject {
             return other;
         }
 
-        return sl.Equals(Localizer.DEFAULT_LANGUAGE, StringComparison.OrdinalIgnoreCase) ? english : other;
+        if (SteamLanguageList.IsLatinBasic(sl)) {
+            return english;
+        }
+
+        return other.FontAsset != null ? other : latinExtended;
     }
 
     private static bool IsLatinExtended(string sl) {
@@ -105,3 +110,4 @@ public class FontLocalizationSettings : ScriptableObject {
             || sl.Equals("vietnamese", StringComparison.OrdinalIgnoreCase);
     }
 }
+
