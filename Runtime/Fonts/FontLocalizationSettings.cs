@@ -12,10 +12,6 @@ public class FontLocalizationSettings : ScriptableObject {
     [FormerlySerializedAs("latinExtended")]
     public FontLocalizationSetting other;
 
-    [Tooltip("Enable if your project distinguishes Latin Basic from Latin Extended languages with diacritics.")]
-    public bool useLatinExtendedSplit = false;
-    public FontLocalizationSetting latinExtended;
-
     private static FontLocalizationSettings instance;
     public static FontLocalizationSettings Instance {
         get {
@@ -135,32 +131,13 @@ public class FontLocalizationSettings : ScriptableObject {
             return other.FontAsset != null ? other : english;
         }
 
-        // If manual split is explicitly forced and language is designated as Latin Extended, use latinExtended
-        if (useLatinExtendedSplit && latinExtended.FontAsset != null && IsLatinExtended(sl)) {
-            return latinExtended;
-        }
-
-        // 1. If English font asset exists and contains all required glyphs for this language, use it!
+        // If English font asset exists and contains all required glyphs for this language, use it!
         if (english.FontAsset != null && FontSupportsLanguage(english.FontAsset, sl)) {
             return english;
         }
 
-        // 2. If English is missing glyphs, check if latinExtended can handle it (for Latin script)
-        if (latinExtended.FontAsset != null && SteamLanguageList.IsLatinScript(sl) &&
-            FontSupportsLanguage(latinExtended.FontAsset, sl)) {
-            return latinExtended;
-        }
-
-        // 3. Fallback to other (Noto / global font)
-        return other.FontAsset != null ? other : (latinExtended.FontAsset != null ? latinExtended : english);
-    }
-
-    private static bool IsLatinExtended(string sl) {
-        return sl.Equals("czech", StringComparison.OrdinalIgnoreCase)
-            || sl.Equals("polish", StringComparison.OrdinalIgnoreCase)
-            || sl.Equals("romanian", StringComparison.OrdinalIgnoreCase)
-            || sl.Equals("hungarian", StringComparison.OrdinalIgnoreCase)
-            || sl.Equals("vietnamese", StringComparison.OrdinalIgnoreCase);
+        // Fallback to other (Noto / global font)
+        return other.FontAsset != null ? other : english;
     }
 }
 
