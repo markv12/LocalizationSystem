@@ -1,194 +1,102 @@
 # Unity Localization System
 
-A centralized, production-ready localization system for Unity games supporting **TextMeshPro**, **UI Toolkit**, automated **OpenAI Batch API translations**, and one-click **Noto font merging and SDF atlas baking**.
+A lightweight, centralized localization system for Unity supporting **TextMeshPro**, **UI Toolkit**, automated **OpenAI batch translations**, and **SDF font atlas baking**.
 
 ---
 
-## Features
+## Installation
 
-- **Standard Assets / Assembly-CSharp Compatible:** No `.asmdef` files required. Drop directly into `Assets/` (via Git Submodule, symlink, or clone) with zero compile-boundary friction.
-- **Decoupled Architecture:** Integrates cleanly with any game's settings/save system via `Localizer.GetSavedLanguage` / `SetSavedLanguage` delegates (with built-in `PlayerPrefs` fallback).
-- **Comprehensive Language Support:** Pre-configured for 30+ Steam languages including **Bahasa Melayu (Malay)**, Bahasa Indonesia, CJK, Cyrillic, Thai, and Arabic (RTL).
-- **RTL & Arabic Text Shaping:** `RTLHelper` interfaces directly with your project's `RTLTMPro` installation (e.g. in `Assets/Standard Assets/RTLTMPro`).
-- **Dynamic Database Categories:** `LocalizationMasterDatabase` supports custom entry categories (Items, Instruments, Dialogue, Scales) configured dynamically in the Inspector or synced via custom scripts.
-- **Automated OpenAI Batch Translations:** REST-based client for OpenAI's Batch API (supporting models like `gpt-5.6-luna`, `gpt-5.5`, `gpt-4o`) with JSON schema enforcement, reasoning effort control, and automatic polling.
-- **One-Click Noto Font Merging & SDF Baking:** Extracts characters in use from the database, runs `fontMerge.py` to produce a unified `NotoAll.ttf` from 7 Noto source font families, and automatically bakes TextMeshPro and UI Toolkit SDF atlases inside Unity.
-- **UI Toolkit & TextMeshPro Integration:**
-  - `Loc.Get`, `Loc.Format`, `Loc.Choices`: High-level C# string helpers with automatic RTL shaping and English fallbacks.
-  - `UILocalization` & `UIDocumentLocalizer`: Automatic element tree walking based on UXML document name and element IDs.
-  - `UxmlStringSync`: Scans UXML documents and extracts new/modified strings to CSV for translation.
-  - `TextFieldLocalizer`, `FontLocalizer`, `SpriteLocalizer`: Components for TextMeshPro text and localized sprite swaps.
-  - `SteamPageTranslatorWindow`: Editor window for translating Steam store page CSVs.
-
----
-
-## Installation & Sharing Options (No ASMDEF)
-
-Because this repository does not use `.asmdef` files, it compiles directly into your project's default `Assembly-CSharp` and `Assembly-CSharp-Editor` assemblies.
-
-### Option 1: Git Submodule inside `Assets/` (Recommended for Git projects)
-In your game repository root, add this repo as a submodule:
-```bash
-git submodule add https://github.com/<your-account>/LocalizationSystem.git Assets/LocalizationSystem
+Add the package via Unity Package Manager using the Git URL:
+```text
+https://github.com/markv12/LocalizationSystem.git
 ```
-To update the shared system across all projects:
-```bash
-git submodule update --remote Assets/LocalizationSystem
+Or add directly to `Packages/manifest.json`:
+```json
+"com.markv12.localizationsystem": "https://github.com/markv12/LocalizationSystem.git"
 ```
 
-### Option 2: Directory Junction / Symlink (Ideal for local multi-project dev)
-On Windows, create a directory junction pointing from your game's `Assets` folder to your shared clone:
-```powershell
-cmd /c mklink /J "D:\YourGame\Assets\LocalizationSystem" "D:\LocalizationSystem"
-```
-Any edits made to the localization code in any project are instantly reflected across all linked projects.
+### Dependencies
+- **TextMeshPro** (`com.unity.ugui`)
+- **RTLTMPro** (optional, for Arabic / RTL support: [github.com/pnarimani/RTLTMPro](https://github.com/pnarimani/RTLTMPro))
+- **Python 3 + fonttools** (optional, only needed when rebuilding merged Noto font atlases: `pip install fonttools`)
 
 ---
 
-## Prerequisites
+## Setup
 
-- **TextMeshPro** (included with modern Unity / `com.unity.ugui`).
-- **RTLTMPro** ([github.com/pnarimani/RTLTMPro](https://github.com/pnarimani/RTLTMPro)), typically placed in `Assets/Standard Assets/RTLTMPro`.
-- **Python 3 with fonttools** (only for rebuilding Noto fonts):
-  ```bash
-  python -m pip install fonttools
-  ```
+### 1. Create Assets in `Assets/Resources/`
+1. **Master Database**: **Assets → Create → Localization → Master Database** (name it `LocalizationMasterDatabase`).
+   - Add target languages and project context for AI translation.
+2. **Font Settings**: **Assets → Create → Localization → Font Localization Settings** (name it `FontLocalizationSettings`).
+   - Assign fonts for your languages (Regular, Title, Paragraph).
 
----
-
-## Getting Started
-
-### 1. Create the Master Database
-1. In your project's `Assets/Resources` folder, create a database via **Assets → Create → Localization → Master Database**. Name it `LocalizationMasterDatabase`.
-2. Configure **Game Genre**, **Project Tone**, and **Global Context** to give the AI translator accurate context.
-3. Click **Add All Languages** to populate the target Steam languages.
-
-### 2. Configure Fonts & Settings
-1. Create a settings asset in `Assets/Resources` via **Assets → Create → Localization → Font Localization Settings**. Name it `FontLocalizationSettings`.
-2. Assign your default English font and fallback/other fonts.
-3. If using Noto font generation:
-   - Ensure `python -m pip install fonttools` is installed.
-   - In `LocalizationMasterDatabase`, click **Rebuild Localization Font**.
-
-### 3. Language Storage Hook (Optional)
-By default, the system stores and retrieves the active language in `PlayerPrefs` (`"SelectedLanguage"`). To connect it to your game's own settings manager:
+### 2. Connect Saved Language (Optional)
+By default, the active language is saved in `PlayerPrefs` (`"SelectedLanguage"`). To hook into your existing settings or save system:
 ```csharp
-void Awake() {
-    Localizer.GetSavedLanguage = () => GameSettings.Language;
-    Localizer.SetSavedLanguage = (lang) => { GameSettings.Language = lang; };
-}
+Localizer.GetSavedLanguage = () => MySettings.Language;
+Localizer.SetSavedLanguage = (lang) => MySettings.Language = lang;
 ```
 
 ---
 
-## Code Usage Examples
+## How to Use
 
-### C# UI & Logic
+### In the Inspector (Components)
+
+- **TextMeshPro Text (`TextFieldLocalizer`)**:
+  Attach to any GameObject with a `TMP_Text` component.
+  - `locKey`: The localization key to display (falls back to existing text if blank).
+  - `type`: Select font variant (`Regular`, `Title`, `Paragraph`).
+  - `outline`: Select outline style (`None`, `Black`, `White`). Outlines are generated dynamically as true outer outlines without manual material presets.
+
+- **Font / Outline Only (`FontLocalizer`)**:
+  Attach to any `TMP_Text` to swap fonts and outline styling per language without managing string keys.
+
+- **Localized Sprites (`UISpriteLocalizer` / `WorldSpriteLocalizer`)**:
+  Attach to a UI `Image` or 2D `SpriteRenderer` to swap sprite graphics or overlay localized text per language.
+
+- **UI Toolkit (`UIDocumentLocalizer`)**:
+  Attach to a GameObject with a `UIDocument`. Elements are automatically matched by element name: `<document-name>.<element-name>`.
+  - Add USS class `no-loc` to elements that should never be translated.
+
+### In C# Scripts
+
 ```csharp
-// Simple string lookup with RTL shaping and English fallback
-string title = Loc.Get("menu.title");
+// Simple text lookup (includes automatic RTL shaping and English fallback)
+string text = Loc.Get("menu.play");
 
-// Formatted string ({0}, {1}) with translator error resilience
-string welcome = Loc.Format("menu.welcome", playerName);
+// Formatted strings with arguments
+string score = Loc.Format("game.score", currentScore);
 
 // Dropdown options
-List<string> options = Loc.Choices("opt.easy", "opt.medium", "opt.hard");
+List<string> options = Loc.Choices("opt.easy", "opt.normal", "opt.hard");
 
-// Changing language at runtime
+// Change language at runtime
 Localizer.LoadLanguage("japanese");
+
+// Listen for language changes
+Localizer.LanguageChangedEvent += OnLanguageChanged;
 ```
-
-### TextMeshPro UI
-- Attach `TextFieldLocalizer` to any GameObject with a `TMP_Text` component. Set the `locKey`.
-- Attach `FontLocalizer` to swap fonts or material outline presets when language changes.
-
-### UI Toolkit (UXML)
-- Name your elements in UI Builder (`resume-button`, `settings-button`).
-- Add `UIDocumentLocalizer` to the GameObject with the `UIDocument`. Text is automatically keyed as `<document-name>.<element-name>`.
-- Add USS class `no-loc` to elements that should never be translated.
 
 ---
 
-## Translation Workflow with OpenAI Batch API
+## Translating & Baking Strings
 
-### 1. Configure OpenAI Credentials
-Create a `.env` file in your Unity project root (next to `Assets/` and `ProjectSettings/`):
+Open **Window → Localization → Localization Dashboard**:
 
-```env
-# Required: Your OpenAI API key
-OPENAI_API_KEY=sk-proj-...
-
-# Optional / Recommended: Required if using legacy user keys (sk-...) or project scoping
-OPENAI_PROJECT_ID=proj_...
-
-# Optional: Required if your account belongs to multiple OpenAI organizations
-OPENAI_ORG_ID=org-...
-```
-
-> **Note on OpenAI Project & Organization IDs:**
-> - If you use a modern **Project API key** (`sk-proj-...`), the project is usually baked into the key, but specifying `OPENAI_PROJECT_ID` ensures explicit scoping.
-> - If you use a legacy **User API key** (`sk-...`), OpenAI Batch requires `OPENAI_PROJECT_ID` to associate uploaded files with batch jobs; otherwise you may encounter the error: `Cannot find file, or organization does not have access to it`.
-> - If your OpenAI account belongs to multiple organizations, specify `OPENAI_ORG_ID` (aliases `OPENAI_ORGANIZATION` and `OPENAI_PROJECT` are also supported).
-
-### 2. Translating Strings in Unity
-1. Open **Window → Localization → Localization Dashboard**.
-2. Click **Prepare Translation Batch** (hashes English text + context to detect new or dirty strings).
-3. Click **Send to AI** (uploads the `.jsonl` payload and creates the batch job).
-4. Once completed by OpenAI, click **Check API Status** to automatically download results and update `LocalizationMasterDatabase`.
-5. Click **Bake** to compile the strings into runtime assets in `Assets/Resources/Languages/`.
+1. **Add Entries**: Add strings and keys directly or import CSVs.
+2. **AI Translation (OpenAI Batch API)**:
+   - Create a `.env` file in the project root with `OPENAI_API_KEY=sk-...`.
+   - Click **Prepare Translation Batch** to generate the request payload.
+   - Click **Send to AI** to start the batch job.
+   - Click **Check API Status** to retrieve finished translations into the database.
+3. **Bake to Resources**:
+   - Click **Bake** to compile the strings into runtime assets under `Assets/Resources/Languages/`.
 
 ---
 
-## Repository Structure
+## Rebuilding Localization Fonts
 
-```text
-LocalizationSystem/
-├── Runtime/
-│   ├── Core/
-│   │   ├── Localizer.cs                 # Core runtime engine (partial, decoupled)
-│   │   ├── LanguageData.cs              # Runtime string database asset
-│   │   ├── LanguageListAsset.cs         # Baked language list asset
-│   │   ├── SteamLanguageList.cs         # 30+ Steam languages including Malay & ISO helpers
-│   │   ├── RTLHelper.cs                 # Arabic & RTL text shaper (calls project's RTLTMPro)
-│   │   ├── Loc.cs                       # High-level C# UI helper
-│   │   └── CSVParser.cs                 # RFC-compliant CSV reader & writer
-│   ├── Fonts/
-│   │   ├── FontLocalizationSettings.cs  # Multi-font, outline material & language split configuration
-│   │   ├── FontLocalizer.cs             # TMPro font and material applicator
-│   │   └── LanguageChangedHandler.cs    # Base class for reactive localization components
-│   ├── Components/
-│   │   ├── TextFieldLocalizer.cs        # TMPro text localizer
-│   │   ├── SpriteLocalizer.cs           # Localized sprite replacement & overlay
-│   │   ├── UISpriteLocalizer.cs         # uGUI image localizer
-│   │   └── WorldSpriteLocalizer.cs      # 2D world sprite renderer localizer
-│   └── UIToolkit/
-│       ├── UILocalization.cs            # UI Toolkit element tree walker
-│       ├── UIDocumentLocalizer.cs       # Auto-localizing MonoBehaviour for UIDocuments
-│       └── UIToolkitLocalizer.cs        # C# dynamic UI element styler
-├── Editor/
-│   ├── Database/
-│   │   ├── LocalizationMasterDatabase.cs       # Dynamic category database
-│   │   ├── LocalizationMasterDatabaseEditor.cs # Inspector tools
-│   │   ├── LocalizationEntryEditorWindow.cs    # Single-entry modal editor
-│   │   ├── LocalizationDashboard.cs            # Matrix status dashboard
-│   │   └── LanguageListDrawer.cs               # Advanced dropdown drawers
-│   ├── Processing/
-│   │   ├── LocalizationProcessor.cs     # Batch prep, MD5 hashing, baking to Resources
-│   │   ├── LocalizationCsv.cs           # CSV schema definitions
-│   │   ├── LocalizationCsvImporter.cs   # Auto-importer for drop CSVs
-│   │   ├── BatchHandler.cs              # OpenAI batch request preparation & processing
-│   │   └── EditorMainThreadDispatcher.cs# Thread-safe main thread queue
-│   ├── OpenAI/
-│   │   ├── OpenAIBatchAPI.cs            # REST client for OpenAI Files and Batches
-│   │   └── SteamPageTranslatorWindow.cs # Steam store page translation tool
-│   ├── Fonts/
-│   │   ├── LocalizationFontBuilder.cs   # Automated font harvester and SDF baker
-│   │   └── FontMerge/
-│   │       ├── fontMerge.py             # python fontTools subsetter
-│   │       └── *.ttf                    # 7 source Noto TTF files
-│   └── UIToolkit/
-│       └── UxmlStringSync.cs            # Syncs strings from .uxml files to database
-└── Samples~/
-    └── YarnSpinner/
-        └── LocalizerLineProvider.cs     # Yarn Spinner dialogue bridge
-```
+When new characters are introduced:
+1. In `LocalizationMasterDatabase`, click **Rebuild Localization Font**.
+2. The tool extracts all characters in use across all languages, merges the necessary Noto font subsets, and bakes the SDF font asset automatically.
