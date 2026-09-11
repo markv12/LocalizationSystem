@@ -1,5 +1,5 @@
-{
-  "name": "com.swste.localization",
+﻿{
+  "name": "com.markv12.localizationsystem",
   "version": "1.0.0",
   "displayName": "Localization System",
   "description": "Centralized localization system for Unity games supporting TextMeshPro, UI Toolkit, OpenAI Batch API translation, and automated Noto font merging.",
