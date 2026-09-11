@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using TMPro;
 using UnityEngine;
 using UnityEngine.Serialization;
@@ -65,8 +65,9 @@ public class FontLocalizationSettings : ScriptableObject {
             case FontLocalizer.Type.WhiteOutline:
                 return fls.whiteOutlinePreset != null ? fls.whiteOutlinePreset : LocalizationMaterialManager.GetWhiteOutline(font);
             case FontLocalizer.Type.Regular:
-            default:
                 return fls.regularPreset != null ? fls.regularPreset : font?.material;
+            default:
+                return font?.material;
         }
     }
 
@@ -81,7 +82,7 @@ public class FontLocalizationSettings : ScriptableObject {
                 return fls.whiteOutlinePreset != null ? fls.whiteOutlinePreset : LocalizationMaterialManager.GetWhiteOutline(font);
             case FontLocalizer.OutlineStyle.None:
             default:
-                return fls.regularPreset != null ? fls.regularPreset : font?.material;
+                return (type == FontLocalizer.Type.Regular && fls.regularPreset != null) ? fls.regularPreset : font?.material;
         }
     }
 

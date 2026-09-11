@@ -1,4 +1,4 @@
-﻿using TMPro;
+using TMPro;
 #if UNITY_EDITOR
 using UnityEditor;
 #endif
@@ -48,10 +48,10 @@ public class FontLocalizer : LanguageChangedHandler {
 
     public enum Type {
         Regular = 0,
-        BlackOutline = 1,
-        WhiteOutline = 2,
-        Title = 3,
-        Paragraph = 4
+        Title = 1,
+        Paragraph = 2,
+        BlackOutline = 3,
+        WhiteOutline = 4
     }
 }
 
