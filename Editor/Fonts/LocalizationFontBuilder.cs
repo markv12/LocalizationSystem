@@ -175,28 +175,68 @@ public static class LocalizationFontBuilder {
 
     #region Merge
 
+    private static string ResolveToPhysicalPath(string assetPath) {
+        if (string.IsNullOrEmpty(assetPath)) return null;
+        var packageInfo = UnityEditor.PackageManager.PackageInfo.FindForAssetPath(assetPath);
+        if (packageInfo != null && !string.IsNullOrEmpty(packageInfo.resolvedPath)) {
+            string relPath = assetPath.Substring(packageInfo.assetPath.Length).TrimStart('/', '\\');
+            return Path.GetFullPath(Path.Combine(packageInfo.resolvedPath, relPath));
+        }
+        return Path.GetFullPath(assetPath);
+    }
+
     private static string FindMergeScriptPath() {
+        // 1. Prefer the script inside this package (works for git, local, and registry packages)
+        var packageInfo = UnityEditor.PackageManager.PackageInfo.FindForAssembly(typeof(LocalizationFontBuilder).Assembly);
+        if (packageInfo != null && !string.IsNullOrEmpty(packageInfo.resolvedPath)) {
+            string scriptInPackage = Path.GetFullPath(Path.Combine(packageInfo.resolvedPath, "Editor", "Fonts", "FontMerge", "fontMerge.py"));
+            if (File.Exists(scriptInPackage)) return scriptInPackage;
+        }
+
+        // 2. Check by package asset GUID
+        string guidPath = AssetDatabase.GUIDToAssetPath("77491771ae8b415882f07ad2a9b8aa12");
+        if (!string.IsNullOrEmpty(guidPath)) {
+            string physical = ResolveToPhysicalPath(guidPath);
+            if (File.Exists(physical)) return physical;
+        }
+
+        // 3. Search project assets, prioritizing the package or FontMerge directory
         string[] guids = AssetDatabase.FindAssets("fontMerge");
+        string fallback = null;
         foreach (var guid in guids) {
             string p = AssetDatabase.GUIDToAssetPath(guid);
-            if (p.EndsWith("fontMerge.py", StringComparison.OrdinalIgnoreCase)) return Path.GetFullPath(p);
+            if (!p.EndsWith("fontMerge.py", StringComparison.OrdinalIgnoreCase)) continue;
+            string physical = ResolveToPhysicalPath(p);
+            if (!File.Exists(physical)) continue;
+
+            if (p.Contains("com.markv12.localizationsystem") || p.IndexOf("FontMerge", StringComparison.OrdinalIgnoreCase) >= 0) {
+                return physical;
+            }
+            if (fallback == null) fallback = physical;
         }
-        return Path.GetFullPath("Assets/Fonts/NotoMerge/fontMerge.py");
+
+        return fallback;
     }
 
     private static bool RunMerge() {
         string mergeScript = FindMergeScriptPath();
-        if (!File.Exists(mergeScript)) {
-            Debug.LogError($"[Localization] fontMerge.py script not found at {mergeScript}.");
+        if (string.IsNullOrEmpty(mergeScript) || !File.Exists(mergeScript)) {
+            Debug.LogError($"[Localization] fontMerge.py script not found at '{mergeScript ?? "(null)"}'.");
             return false;
         }
 
         string fontsDir = Path.GetDirectoryName(mergeScript);
+        string foundFull = Path.GetFullPath(FoundCharactersPath);
+        string ttfFull = Path.GetFullPath(TtfPath);
+
+        if (File.Exists(foundFull)) {
+            File.Delete(foundFull);
+        }
 
         string args = $"\"{mergeScript}\"" +
                       $" --chars \"{Path.GetFullPath(CharactersPath)}\"" +
-                      $" --out \"{Path.GetFullPath(TtfPath)}\"" +
-                      $" --found \"{Path.GetFullPath(FoundCharactersPath)}\"" +
+                      $" --out \"{ttfFull}\"" +
+                      $" --found \"{foundFull}\"" +
                       $" --fonts_dir \"{fontsDir}\"";
 
         for (int attempt = 0; attempt < 2; attempt++) {
@@ -211,7 +251,7 @@ public static class LocalizationFontBuilder {
                 return false;
             }
 
-            if (exitCode == 0) {
+            if (exitCode == 0 && File.Exists(foundFull)) {
                 Debug.Log($"[Localization] Merged {TtfPath}\n{output}");
                 return true;
             }
