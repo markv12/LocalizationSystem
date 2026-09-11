@@ -1,12 +1,5 @@
 fileFormatVersion: 2
-guid: f46cc664b3dd2944a8b04542ecb07732
-AssetOrigin:
-  serializedVersion: 1
-  productId: 287711
-  packageName: 'FishNet Pro: Networking Evolved'
-  packageVersion: 4.7.3R Pro
-  assetPath: Assets/FishNet/Runtime/Transporting/Transports/Tugboat/LiteNetLib/package.json
-  uploadId: 986968
+guid: a1f1a05f5890448c889d97ff987c1f15
 TextScriptImporter:
   externalObjects: {}
   userData: 
