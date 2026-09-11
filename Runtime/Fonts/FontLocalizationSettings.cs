@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
 using UnityEngine.Serialization;
@@ -92,24 +93,66 @@ public class FontLocalizationSettings : ScriptableObject {
         }
     }
 
+    private readonly Dictionary<(TMP_FontAsset font, string lang), bool> _fontSupportCache =
+        new Dictionary<(TMP_FontAsset font, string lang), bool>();
+
+    public bool FontSupportsLanguage(TMP_FontAsset font, string sl) {
+        if (font == null) return false;
+        if (string.IsNullOrEmpty(sl) || sl.Equals(Localizer.DEFAULT_LANGUAGE, StringComparison.OrdinalIgnoreCase)) return true;
+        if (SteamLanguageList.IsComplexOrAsianScript(sl)) return false;
+
+        var key = (font, sl.ToLowerInvariant());
+        if (_fontSupportCache.TryGetValue(key, out bool cached)) return cached;
+
+        string requiredGlyphs = SteamLanguageList.GetRequiredCharacters(sl);
+        bool supported = true;
+
+        if (!string.IsNullOrEmpty(requiredGlyphs)) {
+            for (int i = 0; i < requiredGlyphs.Length; i++) {
+                if (!font.HasCharacter(requiredGlyphs[i], searchFallbacks: false)) {
+                    supported = false;
+                    break;
+                }
+            }
+        } else if (!SteamLanguageList.IsLatinScript(sl)) {
+            // Non-Latin language without a glyph definition is assumed unsupported by a standard font
+            supported = false;
+        }
+
+        _fontSupportCache[key] = supported;
+        return supported;
+    }
+
     public FontLocalizationSetting SettingForLanguage(string sl) {
         if (string.IsNullOrEmpty(sl)) sl = Localizer.DEFAULT_LANGUAGE;
 
-        if (useLatinExtendedSplit) {
-            if (SteamLanguageList.IsLatinBasic(sl)) {
-                return english;
-            }
-            if (latinExtended.FontAsset != null && IsLatinExtended(sl)) {
-                return latinExtended;
-            }
-            return other;
-        }
-
-        if (SteamLanguageList.IsLatinBasic(sl)) {
+        if (sl.Equals(Localizer.DEFAULT_LANGUAGE, StringComparison.OrdinalIgnoreCase)) {
             return english;
         }
 
-        return other.FontAsset != null ? other : latinExtended;
+        // Complex and Asian scripts (Arabic, Thai, CJK) always route directly to Noto / other font
+        if (SteamLanguageList.IsComplexOrAsianScript(sl)) {
+            return other.FontAsset != null ? other : english;
+        }
+
+        // If manual split is explicitly forced and language is designated as Latin Extended, use latinExtended
+        if (useLatinExtendedSplit && latinExtended.FontAsset != null && IsLatinExtended(sl)) {
+            return latinExtended;
+        }
+
+        // 1. If English font asset exists and contains all required glyphs for this language, use it!
+        if (english.FontAsset != null && FontSupportsLanguage(english.FontAsset, sl)) {
+            return english;
+        }
+
+        // 2. If English is missing glyphs, check if latinExtended can handle it (for Latin script)
+        if (latinExtended.FontAsset != null && SteamLanguageList.IsLatinScript(sl) &&
+            FontSupportsLanguage(latinExtended.FontAsset, sl)) {
+            return latinExtended;
+        }
+
+        // 3. Fallback to other (Noto / global font)
+        return other.FontAsset != null ? other : (latinExtended.FontAsset != null ? latinExtended : english);
     }
 
     private static bool IsLatinExtended(string sl) {

@@ -83,15 +83,52 @@ public static class LocalizationFontBuilder {
         for (char c = ' '; c <= '~'; c++)
             codePoints.Add(c);
 
+        // Latin-1 Supplement (0x00A0 - 0x00FF: ¡, ¿, accented letters, symbols)
+        for (int i = 0x00A0; i <= 0x00FF; i++) codePoints.Add(i);
+
+        // Latin Extended-A (0x0100 - 0x017F: Central/Eastern Europe, Turkish)
+        for (int i = 0x0100; i <= 0x017F; i++) codePoints.Add(i);
+
+        // Latin Extended-B diacritics & Romanian comma-below
+        codePoints.Add(0x0218); // 'Ș'
+        codePoints.Add(0x0219); // 'ș'
+        codePoints.Add(0x021A); // 'Ț'
+        codePoints.Add(0x021B); // 'ț'
+        codePoints.Add(0x1E9E); // Capital sharp S 'ẞ'
+
+        // Vietnamese precomposed Latin (0x1EA0 - 0x1EF9)
+        for (int i = 0x1EA0; i <= 0x1EF9; i++) codePoints.Add(i);
+
+        // Greek and Coptic (0x0370 - 0x03FF)
+        for (int i = 0x0370; i <= 0x03FF; i++) codePoints.Add(i);
+
+        // Cyrillic (0x0400 - 0x04FF: Russian, Ukrainian, Bulgarian)
+        for (int i = 0x0400; i <= 0x04FF; i++) codePoints.Add(i);
+
         // Arabic presentation forms needed by RTLHelper
         for (int i = 0x0600; i <= 0x06FF; i++) codePoints.Add(i);
         for (int i = 0xFB50; i <= 0xFDFF; i++) codePoints.Add(i);
         for (int i = 0xFE70; i <= 0xFEFF; i++) codePoints.Add(i);
 
-        // Common symbols
+        // Common symbols and typographic punctuation
         codePoints.Add(0x25B2); // '▲'
         codePoints.Add(0x2500); // '─'
         codePoints.Add(0x2014); // '—'
+        codePoints.Add(0x2013); // '–'
+        codePoints.Add(0x2026); // '…'
+        codePoints.Add(0x201C); // '“'
+        codePoints.Add(0x201D); // '”'
+        codePoints.Add(0x201E); // '„'
+        codePoints.Add(0x2018); // '‘'
+        codePoints.Add(0x2019); // '’'
+        codePoints.Add(0x20AC); // '€'
+        codePoints.Add(0x00AB); // '«'
+        codePoints.Add(0x00BB); // '»'
+
+        // Required glyphs from SteamLanguageList definitions
+        foreach (string glyphSet in SteamLanguageList.AllRequiredCharacterSets) {
+            Add(glyphSet, codePoints);
+        }
 
         if (db != null) {
             foreach (LocalizationEntry entry in db.AllEntries) {

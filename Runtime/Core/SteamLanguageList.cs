@@ -125,6 +125,37 @@ public static class SteamLanguageList {
         return latinBasicLanguages.Contains(langCode);
     }
 
+    public static bool IsLatinScript(string langCode) {
+        if (string.IsNullOrWhiteSpace(langCode))
+            return false;
+
+        return latinScriptLanguages.Contains(langCode);
+    }
+
+    public static bool IsComplexOrAsianScript(string langCode) {
+        if (string.IsNullOrWhiteSpace(langCode))
+            return false;
+
+        return langCode.Equals("arabic", StringComparison.OrdinalIgnoreCase)
+            || langCode.Equals("thai", StringComparison.OrdinalIgnoreCase)
+            || langCode.Equals("schinese", StringComparison.OrdinalIgnoreCase)
+            || langCode.Equals("tchinese", StringComparison.OrdinalIgnoreCase)
+            || langCode.Equals("japanese", StringComparison.OrdinalIgnoreCase)
+            || langCode.Equals("koreana", StringComparison.OrdinalIgnoreCase);
+    }
+
+    public static string GetRequiredCharacters(string langCode) {
+        if (string.IsNullOrWhiteSpace(langCode))
+            return string.Empty;
+
+        if (requiredGlyphsByLanguage.TryGetValue(langCode, out string glyphs))
+            return glyphs;
+
+        return string.Empty;
+    }
+
+    public static IEnumerable<string> AllRequiredCharacterSets => requiredGlyphsByLanguage.Values;
+
     private static readonly HashSet<string> latinBasicLanguages = new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
         "english",
         "french",
@@ -142,5 +173,57 @@ public static class SteamLanguageList {
         "turkish",
         "indonesian",
         "malay"
+    };
+
+    private static readonly HashSet<string> latinScriptLanguages = new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+        "english",
+        "french",
+        "german",
+        "spanish",
+        "latam",
+        "portuguese",
+        "brazilian",
+        "italian",
+        "dutch",
+        "danish",
+        "norwegian",
+        "swedish",
+        "finnish",
+        "turkish",
+        "polish",
+        "czech",
+        "hungarian",
+        "romanian",
+        "vietnamese",
+        "indonesian",
+        "malay"
+    };
+
+    private static readonly Dictionary<string, string> requiredGlyphsByLanguage = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+        { "english", "" },
+        { "indonesian", "éèÉÈ" },
+        { "malay", "éèÉÈ" },
+        { "french", "àâæçéèêëîïôœùûüÿÀÂÆÇÉÈÊËÎÏÔŒÙÛÜŸ«»" },
+        { "german", "äöüßÄÖÜẞ„“" },
+        { "spanish", "áéíóúüñÁÉÍÓÚÜÑ¿¡" },
+        { "latam", "áéíóúüñÁÉÍÓÚÜÑ¿¡" },
+        { "italian", "àèéìíîòóùúÀÈÉÌÍÎÒÓÙÚ" },
+        { "portuguese", "ãõáéíóúâêôàçÃÕÁÉÍÓÚÂÊÔÀÇ«»" },
+        { "brazilian", "ãõáéíóúâêôàçÃÕÁÉÍÓÚÂÊÔÀÇ" },
+        { "dutch", "áéíóúàèëïöüĳÁÉÍÓÚÀÈËÏÖÜĲ" },
+        { "danish", "æøåéÆØÅÉ" },
+        { "norwegian", "æøåéÆØÅÉ" },
+        { "swedish", "åäöéÅÄÖÉ" },
+        { "finnish", "äöéšžÄÖÉŠŽ" },
+        { "turkish", "çğışöüâîûÇĞIİŞÖÜÂÎÛ" },
+        { "polish", "ąćęłńóśźżĄĆĘŁŃÓŚŹŻ„”" },
+        { "czech", "áčďéěíňóřšťúůýžÁČĎÉĚÍŇÓŘŠŤÚŮÝŽ" },
+        { "hungarian", "áéíóöőúüűÁÉÍÓÖŐÚÜŰ" },
+        { "romanian", "ăâîșțşţĂÂÎȘȚŞŢ„”" },
+        { "vietnamese", "àảãáạăằẳẵắặâầẩẫấậđèẻẽéẹêềểễếệìỉĩíịòỏõóọôồổỗốộơờởỡớợùủũúụưừửữứựỳỷỹýỵÀẢÃÁẠĂẰẲẴẮẶÂẦẨẪẤẬĐÈẺẼÉẸÊỀỂỄẾỆÌỈĨÍỊÒỎÕÓỌÔỒỔỖỐỘƠỜỞỠỚỢÙỦŨÚỤƯỪỬỮỨỰỲỶỸÝỴ" },
+        { "greek", "αβγδεζηθικλμνξοπρστυφχψωΑΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡΣΤΥΦΧΨΩάέήίόύώΆΈΉΊΌΎΏ" },
+        { "russian", "абвгдеёжзийклмнопрстуфхцчшщъыьэюяАБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ" },
+        { "ukrainian", "абвгґдеєжзиіїйклмнопрстуфхцчшщьюяАБВГҐДЕЄЖЗИІЇЙКЛМНОПРСТУФХЦЧШЩЬЮЯ" },
+        { "bulgarian", "абвгдежзийклмнопрстуфхцчшщъьюяАБВГДЕЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЬЮЯ" }
     };
 }
