@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 
@@ -8,7 +8,6 @@ using UnityEditor;
 using UnityEngine;
 
 [CreateAssetMenu(fileName = "SpriteLocalizer", menuName = "Localization/Sprite Localizer")]
-[PreferBinarySerialization]
 public class SpriteLocalizer : ScriptableObject {
     [SerializeField] public SpriteSet[] spriteSets;
     private readonly Dictionary<string, SpriteSet> spriteDictionary = new Dictionary<string, SpriteSet>(16);
@@ -126,3 +125,4 @@ public class SpriteLocalizerEditor : Editor {
     }
 }
 #endif
+
