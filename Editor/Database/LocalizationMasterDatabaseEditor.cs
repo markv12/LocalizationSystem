@@ -75,11 +75,7 @@ public class LocalizationMasterDatabaseEditor : Editor {
         }
         EditorGUILayout.EndHorizontal();
 
-        OnCustomDatabaseGUI?.Invoke((LocalizationMasterDatabase)target);
-
         EditorGUILayout.Space(8);
         DrawDefaultInspector();
     }
-
-    public static event System.Action<LocalizationMasterDatabase> OnCustomDatabaseGUI;
 }
