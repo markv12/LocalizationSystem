@@ -83,6 +83,9 @@ public class LocalizationMasterDatabase : ScriptableObject, ISerializationCallba
     [SerializeField, HideInInspector]
     private List<LocalizationEntry> ItemEntries;
 
+    [SerializeField, HideInInspector]
+    private List<LocalizationEntry> DialogueEntries;
+
     [LanguageList]
     public List<string> TargetLanguages = new List<string>();
 
@@ -126,6 +129,17 @@ public class LocalizationMasterDatabase : ScriptableObject, ISerializationCallba
             }
             if (cat.Entries == null || cat.Entries.Count == 0) {
                 cat.Entries = new List<LocalizationEntry>(ItemEntries);
+            }
+        }
+
+        if (DialogueEntries != null && DialogueEntries.Count > 0) {
+            var cat = AdditionalCategories.Find(c => c.CategoryName.Equals("Dialogue", StringComparison.OrdinalIgnoreCase));
+            if (cat == null) {
+                cat = new LocalizationCategory("Dialogue");
+                AdditionalCategories.Add(cat);
+            }
+            if (cat.Entries == null || cat.Entries.Count == 0) {
+                cat.Entries = new List<LocalizationEntry>(DialogueEntries);
             }
         }
     }
