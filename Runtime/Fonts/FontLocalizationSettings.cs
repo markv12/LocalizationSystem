@@ -29,7 +29,6 @@ public class FontLocalizationSettings : ScriptableObject {
 
     [Serializable]
     public struct FontLocalizationSetting {
-        [Header("Main Fonts (TMP & UI Toolkit)")]
         [Tooltip("Primary font asset. In Unity 2023+ / Unity 6, this serves both TextMesh Pro and UI Toolkit.")]
         [FormerlySerializedAs("regularFont")]
         [FormerlySerializedAs("fontAsset")]
@@ -41,7 +40,6 @@ public class FontLocalizationSettings : ScriptableObject {
         [Tooltip("Optional paragraph/body font variant.")]
         public TMP_FontAsset paragraphFont;
 
-        [Header("UI Toolkit Overrides (Optional)")]
         [Tooltip("Optional override for UI Toolkit. In Unity 2023+ / Unity 6, leave empty to automatically use the main fonts above. Required on Unity 2022.3 if using UI Toolkit.")]
         [FormerlySerializedAs("regularUIToolkitFont")]
         public TextCoreFontAsset uiToolkitFont;
