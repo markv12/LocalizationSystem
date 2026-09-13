@@ -319,12 +319,25 @@ public static class LocalizationFontBuilder {
             return;
         }
 
+#if UNITY_2023_2_OR_NEWER
+        // Unity 2023.2+ / Unity 6: TMP_FontAsset derives from TextCore.Text.FontAsset.
+        // A single font asset serves both TextMesh Pro and UI Toolkit.
+        TMP_FontAsset font = BakeTmpFont(source, characters);
+        AssetDatabase.SaveAssets();
+
+        if (font != null) {
+            AddFallback(TmpSettingsPath, "m_fallbackFontAssets", font);
+            UnityEngine.Object obsoleteUiFont = AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(UiFontPath);
+            AddFallback(PanelTextSettingsPath, "m_FallbackFontAssets", font, obsoleteUiFont);
+        }
+#else
         TextCoreFontAsset uiFont = BakeUiFont(source, characters);
         TMP_FontAsset tmpFont = BakeTmpFont(source, characters);
         AssetDatabase.SaveAssets();
 
         if (uiFont != null) AddFallback(PanelTextSettingsPath, "m_FallbackFontAssets", uiFont);
         if (tmpFont != null) AddFallback(TmpSettingsPath, "m_fallbackFontAssets", tmpFont);
+#endif
     }
 
     private static TextCoreFontAsset BakeUiFont(Font source, string characters) {
@@ -434,7 +447,12 @@ public static class LocalizationFontBuilder {
         EditorUtility.SetDirty(asset);
         if (atlas != null) {
             SerializedObject texture = new SerializedObject(atlas);
+#if UNITY_2023_2_OR_NEWER
+            // The single font asset is shared with UI Toolkit, which requires readable atlas textures
+            texture.FindProperty("m_IsReadable").boolValue = true;
+#else
             texture.FindProperty("m_IsReadable").boolValue = isUiFont;
+#endif
             texture.ApplyModifiedPropertiesWithoutUndo();
             EditorUtility.SetDirty(atlas);
         }
@@ -459,7 +477,7 @@ public static class LocalizationFontBuilder {
 
     #region Fallbacks
 
-    private static void AddFallback(string settingsPath, string propertyName, UnityEngine.Object fontAsset) {
+    private static void AddFallback(string settingsPath, string propertyName, UnityEngine.Object fontAsset, UnityEngine.Object obsoleteAsset = null) {
         UnityEngine.Object settings = AssetDatabase.LoadMainAssetAtPath(settingsPath);
         if (settings == null) return;
 
@@ -470,8 +488,11 @@ public static class LocalizationFontBuilder {
         bool present = false;
         for (int i = list.arraySize - 1; i >= 0; i--) {
             UnityEngine.Object entry = list.GetArrayElementAtIndex(i).objectReferenceValue;
-            if (entry == fontAsset) present = true;
-            else if (entry == null) list.DeleteArrayElementAtIndex(i);
+            if (entry == fontAsset) {
+                present = true;
+            } else if (entry == null || (obsoleteAsset != null && entry == obsoleteAsset)) {
+                list.DeleteArrayElementAtIndex(i);
+            }
         }
         if (present && !so.hasModifiedProperties) return;
 

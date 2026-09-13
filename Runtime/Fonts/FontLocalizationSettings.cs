@@ -7,8 +7,13 @@ using TextCoreFontAsset = UnityEngine.TextCore.Text.FontAsset;
 
 [CreateAssetMenu(fileName = "FontLocalizationSettings", menuName = "Localization/Font Localization Settings")]
 public class FontLocalizationSettings : ScriptableObject {
+    [Header("Default / English Font Settings")]
+    [Tooltip("Primary font settings used for English and Latin-based languages.")]
     [FormerlySerializedAs("latinBasic")]
     public FontLocalizationSetting english;
+
+    [Header("Fallback / Non-Latin Font Settings (Noto / Global)")]
+    [Tooltip("Font settings used for languages not fully covered by the primary font (e.g. Arabic, Cyrillic, Asian scripts).")]
     [FormerlySerializedAs("latinExtended")]
     public FontLocalizationSetting other;
 
@@ -24,16 +29,27 @@ public class FontLocalizationSettings : ScriptableObject {
 
     [Serializable]
     public struct FontLocalizationSetting {
+        [Header("Main Fonts (TMP & UI Toolkit)")]
+        [Tooltip("Primary font asset. In Unity 2023+ / Unity 6, this serves both TextMesh Pro and UI Toolkit.")]
         [FormerlySerializedAs("regularFont")]
         [FormerlySerializedAs("fontAsset")]
         public TMP_FontAsset FontAsset;
 
+        [Tooltip("Optional title font variant.")]
+        public TMP_FontAsset titleFont;
+
+        [Tooltip("Optional paragraph/body font variant.")]
+        public TMP_FontAsset paragraphFont;
+
+        [Header("UI Toolkit Overrides (Optional)")]
+        [Tooltip("Optional override for UI Toolkit. In Unity 2023+ / Unity 6, leave empty to automatically use the main fonts above. Required on Unity 2022.3 if using UI Toolkit.")]
         [FormerlySerializedAs("regularUIToolkitFont")]
         public TextCoreFontAsset uiToolkitFont;
 
-        public TMP_FontAsset titleFont;
+        [Tooltip("Optional title font override for UI Toolkit.")]
         public TextCoreFontAsset titleUIToolkitFont;
-        public TMP_FontAsset paragraphFont;
+
+        [Tooltip("Optional paragraph font override for UI Toolkit.")]
         public TextCoreFontAsset paragraphUIToolkitFont;
     }
 
@@ -81,12 +97,28 @@ public class FontLocalizationSettings : ScriptableObject {
         FontLocalizationSetting fls = SettingForLanguage(sl);
         switch (type) {
             case FontLocalizer.Type.Title:
-                return fls.titleUIToolkitFont != null ? fls.titleUIToolkitFont : fls.uiToolkitFont;
+                if (fls.titleUIToolkitFont != null) return fls.titleUIToolkitFont;
+#if UNITY_2023_2_OR_NEWER
+                if (fls.titleFont != null) return fls.titleFont;
+#endif
+                return fls.uiToolkitFont != null ? fls.uiToolkitFont : GetDefaultUIToolkitFont(fls);
             case FontLocalizer.Type.Paragraph:
-                return fls.paragraphUIToolkitFont != null ? fls.paragraphUIToolkitFont : fls.uiToolkitFont;
+                if (fls.paragraphUIToolkitFont != null) return fls.paragraphUIToolkitFont;
+#if UNITY_2023_2_OR_NEWER
+                if (fls.paragraphFont != null) return fls.paragraphFont;
+#endif
+                return fls.uiToolkitFont != null ? fls.uiToolkitFont : GetDefaultUIToolkitFont(fls);
             default:
-                return fls.uiToolkitFont;
+                return fls.uiToolkitFont != null ? fls.uiToolkitFont : GetDefaultUIToolkitFont(fls);
         }
+    }
+
+    private TextCoreFontAsset GetDefaultUIToolkitFont(FontLocalizationSetting fls) {
+#if UNITY_2023_2_OR_NEWER
+        return fls.uiToolkitFont != null ? fls.uiToolkitFont : (TextCoreFontAsset)fls.FontAsset;
+#else
+        return fls.uiToolkitFont;
+#endif
     }
 
     private readonly Dictionary<(TMP_FontAsset font, string lang), bool> _fontSupportCache =
