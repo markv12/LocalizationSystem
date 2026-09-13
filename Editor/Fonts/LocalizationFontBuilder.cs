@@ -29,8 +29,14 @@ public static class LocalizationFontBuilder {
     private const string FoundCharactersPath = "Localization/FontCharactersFound.txt";
 
     private const int PointSize = 28;
-    private const int Padding = 10;
-    private const int AtlasSize = 4096;
+    private const int Padding = 9;
+    private static readonly Vector2Int[] CandidateAtlasSizes = {
+        new Vector2Int(1024, 1024),
+        new Vector2Int(1024, 2048),
+        new Vector2Int(2048, 2048),
+        new Vector2Int(2048, 4096),
+        new Vector2Int(4096, 4096)
+    };
 
     private const int Static = 0;
     private const int Dynamic = 1;
@@ -319,62 +325,112 @@ public static class LocalizationFontBuilder {
             return;
         }
 
-#if UNITY_2023_2_OR_NEWER
-        // Unity 2023.2+ / Unity 6: TMP_FontAsset derives from TextCore.Text.FontAsset.
-        // A single font asset serves both TextMesh Pro and UI Toolkit.
-        TMP_FontAsset font = BakeTmpFont(source, characters);
-        AssetDatabase.SaveAssets();
+        Vector2Int optimalSize = DetermineOptimalAtlasSize(source, characters);
 
-        if (font != null) {
-            AddFallback(TmpSettingsPath, "m_fallbackFontAssets", font);
-            UnityEngine.Object obsoleteUiFont = AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(UiFontPath);
-            AddFallback(PanelTextSettingsPath, "m_FallbackFontAssets", font, obsoleteUiFont);
-        }
-#else
-        TextCoreFontAsset uiFont = BakeUiFont(source, characters);
-        TMP_FontAsset tmpFont = BakeTmpFont(source, characters);
+        // Ensure font face is active in FontEngine after testing candidates
+        FontEngine.LoadFontFace(source, PointSize, 0);
+
+        TextCoreFontAsset uiFont = BakeUiFont(source, characters, optimalSize);
+        TMP_FontAsset tmpFont = BakeTmpFont(source, characters, optimalSize);
         AssetDatabase.SaveAssets();
 
         if (uiFont != null) AddFallback(PanelTextSettingsPath, "m_FallbackFontAssets", uiFont);
         if (tmpFont != null) AddFallback(TmpSettingsPath, "m_fallbackFontAssets", tmpFont);
-#endif
     }
 
-    private static TextCoreFontAsset BakeUiFont(Font source, string characters) {
+    private static Vector2Int DetermineOptimalAtlasSize(Font source, string characters) {
+        foreach (Vector2Int size in CandidateAtlasSizes) {
+            TMP_FontAsset tempAsset = null;
+            try {
+                tempAsset = TMP_FontAsset.CreateFontAsset(
+                    source, PointSize, Padding, GlyphRenderMode.SDFAA, size.x, size.y, AtlasPopulationMode.Dynamic, false);
+                if (tempAsset == null) continue;
+
+                bool success = tempAsset.TryAddCharacters(characters, out string missing, false);
+                if (success && string.IsNullOrEmpty(missing)) {
+                    Debug.Log($"[Localization] Optimal font atlas size determined: {size.x}x{size.y} for {characters.Length} characters.");
+                    return size;
+                }
+            } catch (Exception e) {
+                Debug.LogWarning($"[Localization] Error testing atlas size {size.x}x{size.y}: {e.Message}");
+            } finally {
+                if (tempAsset != null) {
+                    if (tempAsset.atlasTextures != null) {
+                        foreach (Texture2D tex in tempAsset.atlasTextures) {
+                            if (tex != null) UnityEngine.Object.DestroyImmediate(tex);
+                        }
+                    }
+                    if (tempAsset.material != null) {
+                        UnityEngine.Object.DestroyImmediate(tempAsset.material);
+                    }
+                    UnityEngine.Object.DestroyImmediate(tempAsset);
+                }
+            }
+        }
+
+        Vector2Int fallback = CandidateAtlasSizes[CandidateAtlasSizes.Length - 1];
+        Debug.LogWarning($"[Localization] Characters did not fit in smaller sizes. Using largest atlas size: {fallback.x}x{fallback.y}.");
+        return fallback;
+    }
+
+    private static void ResizeAtlasIfNeeded(ScriptableObject asset, Texture2D atlas, Vector2Int targetSize) {
+        if (atlas == null) return;
+
+        SerializedObject textureSo = new SerializedObject(atlas);
+        SerializedProperty isReadableProp = textureSo.FindProperty("m_IsReadable");
+        if (isReadableProp != null && !isReadableProp.boolValue) {
+            isReadableProp.boolValue = true;
+            textureSo.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        if (atlas.width != targetSize.x || atlas.height != targetSize.y) {
+            atlas.Reinitialize(targetSize.x, targetSize.y);
+            atlas.Apply(false);
+        }
+
+        SetField(asset, "m_AtlasWidth", targetSize.x);
+        SetField(asset, "m_AtlasHeight", targetSize.y);
+    }
+
+    private static TextCoreFontAsset BakeUiFont(Font source, string characters, Vector2Int atlasSize) {
         TextCoreFontAsset asset = AssetDatabase.LoadAssetAtPath<TextCoreFontAsset>(UiFontPath);
         if (asset == null) {
             asset = TextCoreFontAsset.CreateFontAsset(source, PointSize, Padding, GlyphRenderMode.SDFAA,
-                AtlasSize, AtlasSize, TextCoreAtlasMode.Dynamic, false);
+                atlasSize.x, atlasSize.y, TextCoreAtlasMode.Dynamic, false);
             if (asset == null) {
                 Debug.LogError($"[Localization] Could not create {UiFontPath}.");
                 return null;
             }
             CreateAssetWithSubAssets(asset, UiFontPath, asset.material, asset.atlasTextures[0]);
+        } else {
+            ResizeAtlasIfNeeded(asset, asset.atlasTextures[0], atlasSize);
         }
 
-        ConfigureForBake(asset, source);
+        ConfigureForBake(asset, source, atlasSize);
         asset.ClearFontAssetData(true);
         asset.TryAddCharacters(characters, out string missing, false);
         asset.ReadFontAssetDefinition();
         int bakedCount = characters.Length - (missing?.Length ?? 0);
-        FinishBake(asset, asset.atlasTextures[0], missing, UiFontPath, bakedCount, isUiFont: true);
-        ApplyMaterial(asset.material, asset.atlasTextures[0]);
+        FinishBake(asset, asset.atlasTextures[0], missing, UiFontPath, bakedCount, atlasSize, isUiFont: true);
+        ApplyMaterial(asset.material, asset.atlasTextures[0], atlasSize);
         return asset;
     }
 
-    private static TMP_FontAsset BakeTmpFont(Font source, string characters) {
+    private static TMP_FontAsset BakeTmpFont(Font source, string characters, Vector2Int atlasSize) {
         TMP_FontAsset asset = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(TmpFontPath);
         if (asset == null) {
             asset = TMP_FontAsset.CreateFontAsset(source, PointSize, Padding, GlyphRenderMode.SDFAA,
-                AtlasSize, AtlasSize, AtlasPopulationMode.Dynamic, false);
+                atlasSize.x, atlasSize.y, AtlasPopulationMode.Dynamic, false);
             if (asset == null) {
                 Debug.LogError($"[Localization] Could not create {TmpFontPath}.");
                 return null;
             }
             CreateAssetWithSubAssets(asset, TmpFontPath, asset.material, asset.atlasTextures[0]);
+        } else {
+            ResizeAtlasIfNeeded(asset, asset.atlasTextures[0], atlasSize);
         }
 
-        ConfigureForBake(asset, source);
+        ConfigureForBake(asset, source, atlasSize);
         asset.ClearFontAssetData(true);
         asset.TryAddCharacters(characters, out string missing, false);
         asset.creationSettings = new FontAssetCreationSettings {
@@ -386,20 +442,20 @@ public static class LocalizationFontBuilder {
             padding = Padding,
             paddingMode = 0,
             packingMode = 0,
-            atlasWidth = AtlasSize,
-            atlasHeight = AtlasSize,
+            atlasWidth = atlasSize.x,
+            atlasHeight = atlasSize.y,
             characterSetSelectionMode = 7,
             characterSequence = characters,
             renderMode = (int)GlyphRenderMode.SDFAA,
             includeFontFeatures = false,
         };
         asset.ReadFontAssetDefinition();
-        FinishBake(asset, asset.atlasTextures[0], missing, TmpFontPath, asset.characterTable.Count);
+        FinishBake(asset, asset.atlasTextures[0], missing, TmpFontPath, asset.characterTable.Count, atlasSize);
 
-        ApplyMaterial(asset.material, asset.atlasTextures[0]);
+        ApplyMaterial(asset.material, asset.atlasTextures[0], atlasSize);
         foreach (string guid in AssetDatabase.FindAssets("t:Material", new[] { MaterialFolder })) {
             Material material = AssetDatabase.LoadAssetAtPath<Material>(AssetDatabase.GUIDToAssetPath(guid));
-            if (material != null && material.HasProperty(GradientScaleId)) ApplyMaterial(material, asset.atlasTextures[0]);
+            if (material != null && material.HasProperty(GradientScaleId)) ApplyMaterial(material, asset.atlasTextures[0], atlasSize);
         }
         return asset;
     }
@@ -422,14 +478,14 @@ public static class LocalizationFontBuilder {
         Debug.Log($"[Localization] Created {path}.");
     }
 
-    private static void ConfigureForBake(ScriptableObject asset, Font source) {
+    private static void ConfigureForBake(ScriptableObject asset, Font source, Vector2Int atlasSize) {
         SetField(asset, "m_FaceInfo", FontEngine.GetFaceInfo());
         SetField(asset, "m_SourceFontFileGUID", AssetDatabase.AssetPathToGUID(TtfPath));
         SetField(asset, "m_SourceFontFile_EditorRef", source);
         SetField(asset, "m_SourceFontFile", source);
         SetField(asset, "m_SourceFontFilePath", string.Empty);
-        SetField(asset, "m_AtlasWidth", AtlasSize);
-        SetField(asset, "m_AtlasHeight", AtlasSize);
+        SetField(asset, "m_AtlasWidth", atlasSize.x);
+        SetField(asset, "m_AtlasHeight", atlasSize.y);
         SetField(asset, "m_AtlasPadding", Padding);
         SetField(asset, "m_AtlasRenderMode", GlyphRenderMode.SDFAA);
         SetField(asset, "m_IsMultiAtlasTexturesEnabled", false);
@@ -438,7 +494,7 @@ public static class LocalizationFontBuilder {
         SetEnumField(asset, "m_AtlasPopulationMode", Dynamic);
     }
 
-    private static void FinishBake(ScriptableObject asset, Texture2D atlas, string missing, string path, int baked, bool isUiFont = false) {
+    private static void FinishBake(ScriptableObject asset, Texture2D atlas, string missing, string path, int baked, Vector2Int atlasSize, bool isUiFont = false) {
         if (!isUiFont) {
             SetEnumField(asset, "m_AtlasPopulationMode", Static);
             SetField(asset, "m_SourceFontFile", null);
@@ -447,28 +503,23 @@ public static class LocalizationFontBuilder {
         EditorUtility.SetDirty(asset);
         if (atlas != null) {
             SerializedObject texture = new SerializedObject(atlas);
-#if UNITY_2023_2_OR_NEWER
-            // The single font asset is shared with UI Toolkit, which requires readable atlas textures
-            texture.FindProperty("m_IsReadable").boolValue = true;
-#else
             texture.FindProperty("m_IsReadable").boolValue = isUiFont;
-#endif
             texture.ApplyModifiedPropertiesWithoutUndo();
             EditorUtility.SetDirty(atlas);
         }
 
         if (!string.IsNullOrEmpty(missing)) {
-            Debug.LogError($"[Localization] {path}: {baked} characters baked, but {missing.Length} did not fit in {AtlasSize}x{AtlasSize}.");
+            Debug.LogError($"[Localization] {path}: {baked} characters baked, but {missing.Length} did not fit in {atlasSize.x}x{atlasSize.y}.");
         } else {
-            Debug.Log($"[Localization] Rebuilt {path} with {baked} characters.");
+            Debug.Log($"[Localization] Rebuilt {path} with {baked} characters ({atlasSize.x}x{atlasSize.y}).");
         }
     }
 
-    private static void ApplyMaterial(Material material, Texture atlas) {
+    private static void ApplyMaterial(Material material, Texture atlas, Vector2Int atlasSize) {
         if (material == null) return;
         material.SetTexture(MainTexId, atlas);
-        material.SetFloat(TextureWidthId, AtlasSize);
-        material.SetFloat(TextureHeightId, AtlasSize);
+        material.SetFloat(TextureWidthId, atlasSize.x);
+        material.SetFloat(TextureHeightId, atlasSize.y);
         if (material.HasProperty(GradientScaleId)) material.SetFloat(GradientScaleId, Padding + 1);
         EditorUtility.SetDirty(material);
     }
@@ -477,7 +528,7 @@ public static class LocalizationFontBuilder {
 
     #region Fallbacks
 
-    private static void AddFallback(string settingsPath, string propertyName, UnityEngine.Object fontAsset, UnityEngine.Object obsoleteAsset = null) {
+    private static void AddFallback(string settingsPath, string propertyName, UnityEngine.Object fontAsset) {
         UnityEngine.Object settings = AssetDatabase.LoadMainAssetAtPath(settingsPath);
         if (settings == null) return;
 
@@ -488,11 +539,8 @@ public static class LocalizationFontBuilder {
         bool present = false;
         for (int i = list.arraySize - 1; i >= 0; i--) {
             UnityEngine.Object entry = list.GetArrayElementAtIndex(i).objectReferenceValue;
-            if (entry == fontAsset) {
-                present = true;
-            } else if (entry == null || (obsoleteAsset != null && entry == obsoleteAsset)) {
-                list.DeleteArrayElementAtIndex(i);
-            }
+            if (entry == fontAsset) present = true;
+            else if (entry == null) list.DeleteArrayElementAtIndex(i);
         }
         if (present && !so.hasModifiedProperties) return;
 

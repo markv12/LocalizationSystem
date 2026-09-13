@@ -17,13 +17,6 @@ public class FontLocalizationSettingsEditor : Editor {
     public override void OnInspectorGUI() {
         serializedObject.Update();
 
-#if UNITY_2023_2_OR_NEWER
-        EditorGUILayout.HelpBox(
-            "Unity 2023+ / Unity 6: Main Fonts serve both TextMesh Pro and UI Toolkit. " +
-            "UI Toolkit overrides are collapsed below.", MessageType.Info);
-        EditorGUILayout.Space(4);
-#endif
-
         DrawSettingGroup("Default / English Font Settings", _englishProp, ref _englishUiFoldout);
         EditorGUILayout.Space(14);
         DrawSettingGroup("Fallback / Non-Latin Font Settings (Noto / Global)", _otherProp, ref _otherUiFoldout);
@@ -45,27 +38,23 @@ public class FontLocalizationSettingsEditor : Editor {
         SerializedProperty titleUiToolkitFont = groupProp.FindPropertyRelative("titleUIToolkitFont");
         SerializedProperty paragraphUiToolkitFont = groupProp.FindPropertyRelative("paragraphUIToolkitFont");
 
-        // Main Fonts (clean primary view)
-        EditorGUILayout.PropertyField(fontAsset, new GUIContent("Regular Font", "Primary font asset. In Unity 2023+ / Unity 6, this serves both TextMesh Pro and UI Toolkit."));
-        EditorGUILayout.PropertyField(titleFont, new GUIContent("Title Font", "Optional title font variant."));
-        EditorGUILayout.PropertyField(paragraphFont, new GUIContent("Paragraph Font", "Optional paragraph/body font variant."));
+        // Main TMP Fonts
+        EditorGUILayout.PropertyField(fontAsset, new GUIContent("TMP Regular Font", "Primary TextMesh Pro font asset for this language."));
+        EditorGUILayout.PropertyField(titleFont, new GUIContent("TMP Title Font", "Optional title TextMesh Pro font variant."));
+        EditorGUILayout.PropertyField(paragraphFont, new GUIContent("TMP Paragraph Font", "Optional paragraph/body TextMesh Pro font variant."));
 
-        // Collapsible UI Toolkit Overrides
-        bool hasOverrides = (uiToolkitFont != null && uiToolkitFont.objectReferenceValue != null) ||
-                            (titleUiToolkitFont != null && titleUiToolkitFont.objectReferenceValue != null) ||
-                            (paragraphUiToolkitFont != null && paragraphUiToolkitFont.objectReferenceValue != null);
-
-        string foldoutLabel = hasOverrides
-            ? "UI Toolkit Overrides (Active)"
-            : "UI Toolkit Overrides (Optional)";
+        // Collapsible UI Toolkit Fonts
+        bool hasUiFonts = (uiToolkitFont != null && uiToolkitFont.objectReferenceValue != null) ||
+                          (titleUiToolkitFont != null && titleUiToolkitFont.objectReferenceValue != null) ||
+                          (paragraphUiToolkitFont != null && paragraphUiToolkitFont.objectReferenceValue != null);
 
         EditorGUILayout.Space(2);
-        foldout = EditorGUILayout.Foldout(foldout || hasOverrides, foldoutLabel, true);
+        foldout = EditorGUILayout.Foldout(foldout || hasUiFonts, "UI Toolkit Fonts", true);
         if (foldout) {
             EditorGUI.indentLevel++;
-            EditorGUILayout.PropertyField(uiToolkitFont, new GUIContent("UI Toolkit Regular", "Optional override. In Unity 2023+, leave empty to use the Regular Font above."));
-            EditorGUILayout.PropertyField(titleUiToolkitFont, new GUIContent("UI Toolkit Title", "Optional override. In Unity 2023+, leave empty to use the Title Font above."));
-            EditorGUILayout.PropertyField(paragraphUiToolkitFont, new GUIContent("UI Toolkit Paragraph", "Optional override. In Unity 2023+, leave empty to use the Paragraph Font above."));
+            EditorGUILayout.PropertyField(uiToolkitFont, new GUIContent("UI Toolkit Regular", "Primary UI Toolkit font asset for this language."));
+            EditorGUILayout.PropertyField(titleUiToolkitFont, new GUIContent("UI Toolkit Title", "Optional UI Toolkit title font variant."));
+            EditorGUILayout.PropertyField(paragraphUiToolkitFont, new GUIContent("UI Toolkit Paragraph", "Optional UI Toolkit paragraph font variant."));
             EditorGUI.indentLevel--;
         }
 
