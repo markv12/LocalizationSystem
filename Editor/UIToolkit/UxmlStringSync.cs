@@ -12,9 +12,8 @@ using UnityEngine;
 public static class UxmlStringSync {
     [MenuItem("Tools/Localization/Sync UXML Strings")]
     public static void Sync() {
-        var database = Resources.Load<LocalizationMasterDatabase>("LocalizationMasterDatabase");
+        var database = LocalizationMasterDatabase.LoadDatabase();
         if (database == null) {
-            Debug.LogError("[Localization] LocalizationMasterDatabase not found in Resources.");
             return;
         }
 

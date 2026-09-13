@@ -2,6 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
+#if UNITY_EDITOR
+using UnityEditor;
+#endif
 
 public enum ReasoningEffort {
     Low,
@@ -193,4 +196,49 @@ public class LocalizationMasterDatabase : ScriptableObject, ISerializationCallba
         TargetLanguages.Sort((a, b) =>
             SteamLanguageList.GetSortIndex(a).CompareTo(SteamLanguageList.GetSortIndex(b)));
     }
+
+#if UNITY_EDITOR
+    private static LocalizationMasterDatabase _cachedInstance;
+
+    /// <summary>
+    /// Finds and loads the LocalizationMasterDatabase asset anywhere in the project.
+    /// Prioritizes an asset named "LocalizationMasterDatabase" if multiple instances exist.
+    /// </summary>
+    public static LocalizationMasterDatabase LoadDatabase(bool forceReload = false) {
+        if (!forceReload && _cachedInstance != null) return _cachedInstance;
+
+        string[] guids = AssetDatabase.FindAssets("t:LocalizationMasterDatabase");
+        if (guids == null || guids.Length == 0) {
+            Debug.LogError("[Localization] No LocalizationMasterDatabase found in the project. Create one via Assets -> Create -> Localization -> Master Database.");
+            return null;
+        }
+
+        string selectedPath = null;
+        if (guids.Length == 1) {
+            selectedPath = AssetDatabase.GUIDToAssetPath(guids[0]);
+        } else {
+            foreach (string guid in guids) {
+                string path = AssetDatabase.GUIDToAssetPath(guid);
+                if (System.IO.Path.GetFileNameWithoutExtension(path).Equals("LocalizationMasterDatabase", StringComparison.OrdinalIgnoreCase)) {
+                    selectedPath = path;
+                    break;
+                }
+            }
+            if (string.IsNullOrEmpty(selectedPath)) {
+                selectedPath = AssetDatabase.GUIDToAssetPath(guids[0]);
+            }
+            Debug.LogWarning($"[Localization] Multiple LocalizationMasterDatabase assets found ({guids.Length}). Using '{selectedPath}'.");
+        }
+
+        _cachedInstance = AssetDatabase.LoadAssetAtPath<LocalizationMasterDatabase>(selectedPath);
+        return _cachedInstance;
+    }
+
+    /// <summary>
+    /// Clears the cached database instance reference.
+    /// </summary>
+    public static void ClearCachedDatabase() {
+        _cachedInstance = null;
+    }
+#endif
 }

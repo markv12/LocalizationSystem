@@ -24,10 +24,10 @@ Or add directly to `Packages/manifest.json`:
 
 ## Setup
 
-### 1. Create Assets in `Assets/Resources/`
-1. **Master Database**: **Assets → Create → Localization → Master Database** (name it `LocalizationMasterDatabase`).
+### 1. Create Assets
+1. **Master Database**: **Assets → Create → Localization → Master Database** (can be placed anywhere in your project, e.g. `Assets/Localization/`).
    - Add target languages and project context for AI translation.
-2. **Font Settings**: **Assets → Create → Localization → Font Localization Settings** (name it `FontLocalizationSettings`).
+2. **Font Settings**: **Assets → Create → Localization → Font Localization Settings** (create in `Assets/Resources/` named `FontLocalizationSettings`).
    - Assign fonts for your languages (Regular, Title, Paragraph).
 
 ### 2. Connect Saved Language (Optional)

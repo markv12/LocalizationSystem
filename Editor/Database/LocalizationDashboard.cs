@@ -33,11 +33,7 @@ public class LocalizationDashboard : EditorWindow {
     private void OnEnable() {
         _richTextStyle = null;
         if (database == null) {
-            string[] guids = AssetDatabase.FindAssets("t:LocalizationMasterDatabase");
-            if (guids.Length > 0) {
-                string path = AssetDatabase.GUIDToAssetPath(guids[0]);
-                database = AssetDatabase.LoadAssetAtPath<LocalizationMasterDatabase>(path);
-            }
+            database = LocalizationMasterDatabase.LoadDatabase();
         }
     }
 

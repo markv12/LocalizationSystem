@@ -19,7 +19,7 @@ public class SteamPageTranslatorWindow : EditorWindow {
     }
 
     private void OnEnable() {
-        var db = Resources.Load<LocalizationMasterDatabase>("LocalizationMasterDatabase");
+        var db = LocalizationMasterDatabase.LoadDatabase();
         if (db != null) {
             _gameContext = db.GlobalContext;
         }

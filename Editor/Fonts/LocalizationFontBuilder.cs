@@ -44,9 +44,8 @@ public static class LocalizationFontBuilder {
 
     [MenuItem("Tools/Localization/Rebuild Localization Font")]
     private static void RebuildFromMenu() {
-        LocalizationMasterDatabase db = Resources.Load<LocalizationMasterDatabase>("LocalizationMasterDatabase");
+        LocalizationMasterDatabase db = LocalizationMasterDatabase.LoadDatabase();
         if (db == null) {
-            Debug.LogError("[Localization] LocalizationMasterDatabase not found in Resources.");
             return;
         }
         Rebuild(db);

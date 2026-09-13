@@ -192,11 +192,9 @@ public static class LocalizationProcessor {
 
     [MenuItem("Tools/Localization/Bake Language Assets")]
     public static void BakeAssetsFromMenu() {
-        var db = Resources.Load<LocalizationMasterDatabase>("LocalizationMasterDatabase");
+        var db = LocalizationMasterDatabase.LoadDatabase();
         if (db != null) {
             BakeAssets(db);
-        } else {
-            Debug.LogError("[Localization] Could not find LocalizationMasterDatabase in Resources.");
         }
     }
 

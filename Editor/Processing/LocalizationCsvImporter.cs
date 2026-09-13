@@ -26,9 +26,8 @@ public static class LocalizationCsvImporter {
             return;
         }
 
-        var database = Resources.Load<LocalizationMasterDatabase>("LocalizationMasterDatabase");
+        var database = LocalizationMasterDatabase.LoadDatabase();
         if (database == null) {
-            Debug.LogError("[Localization] LocalizationMasterDatabase not found in Resources.");
             return;
         }
 
