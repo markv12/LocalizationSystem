@@ -93,10 +93,7 @@ public static class LocalizationProcessor {
             Debug.Log($"<b>[Localization] Batch Preview Saved</b>: {jsonlPath}");
         }
 
-        Debug.Log($"<b>[Localization] Translation Batch Prepared</b>\n" +
-                  $"- Total Strings to Translate: {totalStringsToTranslate}\n" +
-                  $"- New Strings: {newEntries}\n" +
-                  $"- Dirty (Modified) Strings: {dirtyEntries}\n" +
+        Debug.Log($"<b>[Localization] Translation Batch Prepared: Total: {totalStringsToTranslate}, New: {newEntries}, Dirty: {dirtyEntries}</b>\n" +
                   $"- Languages Affected: {string.Join(", ", languagesAffected)}\n" +
                   $"- Estimated Batch Size: ~{(totalStringsToTranslate * 50)} tokens (rough estimate)");
     }
