@@ -37,11 +37,13 @@ public class FontLocalizationSettingsEditor : Editor {
         SerializedProperty uiToolkitFont = groupProp.FindPropertyRelative("uiToolkitFont");
         SerializedProperty titleUiToolkitFont = groupProp.FindPropertyRelative("titleUIToolkitFont");
         SerializedProperty paragraphUiToolkitFont = groupProp.FindPropertyRelative("paragraphUIToolkitFont");
+        SerializedProperty outlineWidth = groupProp.FindPropertyRelative("outlineWidth");
 
         // Main TMP Fonts
         EditorGUILayout.PropertyField(fontAsset, new GUIContent("TMP Regular Font", "Primary TextMesh Pro font asset for this language."));
         EditorGUILayout.PropertyField(titleFont, new GUIContent("TMP Title Font", "Optional title TextMesh Pro font variant."));
         EditorGUILayout.PropertyField(paragraphFont, new GUIContent("TMP Paragraph Font", "Optional paragraph/body TextMesh Pro font variant."));
+        EditorGUILayout.PropertyField(outlineWidth, new GUIContent("Outline Width", "Optional outline width for this font. Zero uses the shared default."));
 
         // Collapsible UI Toolkit Fonts
         bool hasUiFonts = (uiToolkitFont != null && uiToolkitFont.objectReferenceValue != null) ||

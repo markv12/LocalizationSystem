@@ -35,6 +35,10 @@ public class FontLocalizationSettings : ScriptableObject {
         public TextCoreFontAsset titleUIToolkitFont;
         public TMP_FontAsset paragraphFont;
         public TextCoreFontAsset paragraphUIToolkitFont;
+
+        [Tooltip("Optional outline width for this font. Zero uses the shared default.")]
+        [Range(0f, 1f)]
+        public float outlineWidth;
     }
 
     public TMP_FontAsset LangFont(string sl, FontLocalizer.Type type = FontLocalizer.Type.Regular) {
@@ -50,13 +54,15 @@ public class FontLocalizationSettings : ScriptableObject {
     }
 
     public Material LanguageFontMaterial(string sl, FontLocalizer.Type type) {
-        TMP_FontAsset font = LangFont(sl, type);
+        FontLocalizationSetting setting = SettingForLanguage(sl);
+        TMP_FontAsset font = FontForSetting(setting, type);
+        float outlineWidth = OutlineWidthFor(setting);
 
         switch (type) {
             case FontLocalizer.Type.BlackOutline:
-                return LocalizationMaterialManager.GetBlackOutline(font);
+                return LocalizationMaterialManager.GetBlackOutline(font, outlineWidth);
             case FontLocalizer.Type.WhiteOutline:
-                return LocalizationMaterialManager.GetWhiteOutline(font);
+                return LocalizationMaterialManager.GetWhiteOutline(font, outlineWidth);
             case FontLocalizer.Type.Regular:
             default:
                 return font?.material;
@@ -64,13 +70,15 @@ public class FontLocalizationSettings : ScriptableObject {
     }
 
     public Material LanguageFontMaterial(string sl, FontLocalizer.OutlineStyle outline, FontLocalizer.Type type = FontLocalizer.Type.Regular) {
-        TMP_FontAsset font = LangFont(sl, type);
+        FontLocalizationSetting setting = SettingForLanguage(sl);
+        TMP_FontAsset font = FontForSetting(setting, type);
+        float outlineWidth = OutlineWidthFor(setting);
 
         switch (outline) {
             case FontLocalizer.OutlineStyle.Black:
-                return LocalizationMaterialManager.GetBlackOutline(font);
+                return LocalizationMaterialManager.GetBlackOutline(font, outlineWidth);
             case FontLocalizer.OutlineStyle.White:
-                return LocalizationMaterialManager.GetWhiteOutline(font);
+                return LocalizationMaterialManager.GetWhiteOutline(font, outlineWidth);
             case FontLocalizer.OutlineStyle.None:
             default:
                 return font?.material;
@@ -88,6 +96,20 @@ public class FontLocalizationSettings : ScriptableObject {
                 return fls.uiToolkitFont;
         }
     }
+
+    private static TMP_FontAsset FontForSetting(FontLocalizationSetting setting, FontLocalizer.Type type) {
+        switch (type) {
+            case FontLocalizer.Type.Title:
+                return setting.titleFont != null ? setting.titleFont : setting.FontAsset;
+            case FontLocalizer.Type.Paragraph:
+                return setting.paragraphFont != null ? setting.paragraphFont : setting.FontAsset;
+            default:
+                return setting.FontAsset;
+        }
+    }
+
+    private static float OutlineWidthFor(FontLocalizationSetting setting) =>
+        setting.outlineWidth > 0f ? setting.outlineWidth : LocalizationMaterialManager.DefaultOutlineWidth;
 
     private readonly Dictionary<(TMP_FontAsset font, string lang), bool> _fontSupportCache =
         new Dictionary<(TMP_FontAsset font, string lang), bool>();
