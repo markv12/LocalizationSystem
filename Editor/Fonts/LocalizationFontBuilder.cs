@@ -42,11 +42,13 @@ public static class LocalizationFontBuilder {
     private const int Dynamic = 1;
 
     private const string PythonPathKey = "Localization.PythonPath";
+    private const float BoldWeight = 0.2f;
 
     private static readonly int MainTexId = Shader.PropertyToID("_MainTex");
     private static readonly int TextureWidthId = Shader.PropertyToID("_TextureWidth");
     private static readonly int TextureHeightId = Shader.PropertyToID("_TextureHeight");
     private static readonly int GradientScaleId = Shader.PropertyToID("_GradientScale");
+    private static readonly int WeightBoldId = Shader.PropertyToID("_WeightBold");
 
     [MenuItem("Tools/Localization/Rebuild Localization Font")]
     private static void RebuildFromMenu() {
@@ -492,6 +494,8 @@ public static class LocalizationFontBuilder {
         SetField(asset, "m_GetFontFeatures", false);
         SetField(asset, "m_ClearDynamicDataOnBuild", false);
         SetEnumField(asset, "m_AtlasPopulationMode", Dynamic);
+        SetField(asset, "boldStyle", BoldWeight);
+        SetField(asset, "m_BoldStyle", BoldWeight);
     }
 
     private static void FinishBake(ScriptableObject asset, Texture2D atlas, string missing, string path, int baked, Vector2Int atlasSize, bool isUiFont = false) {
@@ -521,6 +525,7 @@ public static class LocalizationFontBuilder {
         material.SetFloat(TextureWidthId, atlasSize.x);
         material.SetFloat(TextureHeightId, atlasSize.y);
         if (material.HasProperty(GradientScaleId)) material.SetFloat(GradientScaleId, Padding + 1);
+        if (material.HasProperty(WeightBoldId)) material.SetFloat(WeightBoldId, BoldWeight);
         EditorUtility.SetDirty(material);
     }
 
