@@ -1,15 +1,19 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Globalization;
 using UnityEngine;
 #if UNITY_EDITOR
 using UnityEditor;
 #endif
 
 public enum ReasoningEffort {
-    Low,
-    Medium,
-    High,
+    Low = 0,
+    Medium = 1,
+    High = 2,
+    None = 3,
+    XHigh = 4,
+    Max = 5,
 }
 
 public enum TranslationStatus {
@@ -21,12 +25,77 @@ public enum TranslationStatus {
 }
 
 [Serializable]
-public class LanguageTranslation {
+public class LanguageTranslation : ISerializationCallbackReceiver {
     public string LanguageCode;
     public string TranslatedText;
     public TranslationStatus Status;
     [HideInInspector] public string SourceHash;
-    [HideInInspector] public string BatchID;
+    // One serialized field, populated only while a translation is out for a batch.
+    [SerializeField, HideInInspector, Newtonsoft.Json.JsonProperty]
+    private string BatchTracking;
+    private static readonly string[] EmptyTracking = { "", "", "" };
+
+    [Newtonsoft.Json.JsonIgnore]
+    public string BatchID => ReadTracking()[0];
+    [Newtonsoft.Json.JsonIgnore] public string BatchRequestId => ReadTracking()[1];
+    [Newtonsoft.Json.JsonIgnore] public string BatchSourceHash => ReadTracking()[2];
+
+    public bool MatchesBatchRequest(string batchId, string requestId, string sourceHash) {
+        if (Status != TranslationStatus.OutForBatch) return false;
+        var parts = ReadTracking();
+        return parts[0].Length > 0 && parts[0] == batchId && parts[1] == requestId && parts[2] == sourceHash;
+    }
+
+    public void SetBatchTracking(string batchId, string requestId, string sourceHash) {
+        if (string.IsNullOrEmpty(batchId)) throw new ArgumentException("Batch ID is required.");
+        if (string.IsNullOrEmpty(requestId)) throw new ArgumentException("Batch request ID is required.");
+        BatchTracking = PackBatchTracking(batchId, requestId, sourceHash);
+    }
+
+    private static string PackBatchTracking(string batchId, string requestId, string sourceHash) {
+        string[] parts = { batchId ?? "", requestId ?? "", sourceHash ?? "" };
+        return "v1:" + string.Concat(parts.Select(p => p.Length.ToString(CultureInfo.InvariantCulture) + ":" + p));
+    }
+
+    public void ClearBatchTracking() { BatchTracking = string.Empty; }
+
+    public bool ResetBatchTracking() {
+        bool wasPending = Status == TranslationStatus.OutForBatch;
+        if (wasPending)
+            Status = string.IsNullOrEmpty(TranslatedText) ? TranslationStatus.Untranslated : TranslationStatus.Dirty;
+        ClearBatchTracking();
+        return wasPending;
+    }
+
+    private string[] ReadTracking() {
+        if (string.IsNullOrEmpty(BatchTracking)) return EmptyTracking;
+        if (!BatchTracking.StartsWith("v1:", StringComparison.Ordinal)) return EmptyTracking;
+        var parts = new string[3];
+        int offset = 3;
+        for (int i = 0; i < parts.Length; i++) {
+            int separator = BatchTracking.IndexOf(':', offset);
+            if (separator < offset || !int.TryParse(BatchTracking.Substring(offset, separator - offset),
+                NumberStyles.None, CultureInfo.InvariantCulture, out int length) || length > BatchTracking.Length - separator - 1)
+                return EmptyTracking;
+            offset = separator + 1;
+            parts[i] = BatchTracking.Substring(offset, length);
+            offset += length;
+        }
+        return offset == BatchTracking.Length && !string.IsNullOrEmpty(parts[0]) && !string.IsNullOrEmpty(parts[1])
+            ? parts : EmptyTracking;
+    }
+
+    public void OnBeforeSerialize() { NormalizeBatchTracking(); }
+    public void OnAfterDeserialize() { NormalizeBatchTracking(); }
+
+    private void NormalizeBatchTracking() {
+        if (Status != TranslationStatus.OutForBatch) {
+            ClearBatchTracking();
+        } else if (string.IsNullOrEmpty(BatchID)) {
+            // Missing/corrupt tracking cannot retrieve a result; make the entry retryable.
+            ResetBatchTracking();
+        }
+    }
 }
 
 [Serializable]
@@ -93,9 +162,11 @@ public class LocalizationMasterDatabase : ScriptableObject, ISerializationCallba
     public List<string> TargetLanguages = new List<string>();
 
     [OpenAIModelList]
-    public string OpenAIModel = "gpt-5.6-luna";
+    public string OpenAIModel = OpenAITranslationModels.DefaultModel;
 
     public ReasoningEffort Effort = ReasoningEffort.Low;
+    [Tooltip("Output token budget per chunk, including reasoning tokens. Increase if responses exhaust the budget.")]
+    public int MaxCompletionTokens = OpenAITranslationModels.MaxCompletionTokens;
 
     public void OnBeforeSerialize() { }
 

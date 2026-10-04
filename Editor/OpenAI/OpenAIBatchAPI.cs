@@ -93,7 +93,7 @@ public static class OpenAIBatchAPI {
         using (var client = CreateClient(apiKey)) {
             var payload = JsonConvert.SerializeObject(new {
                 input_file_id = fileId,
-                endpoint = "/v1/chat/completions",
+                endpoint = OpenAITranslationModels.Endpoint,
                 completion_window = "24h"
             });
             var response = await client.PostAsync(BATCH_URL,

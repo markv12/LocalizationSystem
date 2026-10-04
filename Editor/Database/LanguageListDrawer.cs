@@ -62,18 +62,6 @@ public class LanguageListDrawer : PropertyDrawer {
 public class LanguageListAttribute : PropertyAttribute { }
 
 public class OpenAIModelDropdown : AdvancedDropdown {
-    private static readonly string[] _models = new[] {
-        "gpt-6-astra",
-        "gpt-6-sol",
-        "gpt-6-luna",
-        "gpt-5.6-luna",
-        "gpt-5.6-terra",
-        "gpt-5.6-sol",
-        "gpt-5.5",
-        "gpt-5.2",
-        "gpt-4o",
-        "gpt-4o-mini"
-    };
 
     private Action<string> _onSelected;
 
@@ -84,7 +72,7 @@ public class OpenAIModelDropdown : AdvancedDropdown {
 
     protected override AdvancedDropdownItem BuildRoot() {
         var root = new AdvancedDropdownItem("OpenAI Models");
-        foreach (var model in _models) {
+        foreach (var model in OpenAITranslationModels.ModelIds) {
             root.AddChild(new AdvancedDropdownItem(model));
         }
         return root;

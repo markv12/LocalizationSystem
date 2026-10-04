@@ -98,45 +98,21 @@ public static class LocalizationProcessor {
                   $"- Estimated Batch Size: ~{(totalStringsToTranslate * 50)} tokens (rough estimate)");
     }
 
-    public static void ResetPendingStatuses(LocalizationMasterDatabase database, IEnumerable<LocalizationEntry> entriesToProcess = null) {
-        if (database == null) return;
-
-        var targetEntries = entriesToProcess ?? database.AllEntries;
+    public static int ResetPendingTranslations(LocalizationMasterDatabase database,
+        IEnumerable<LocalizationEntry> entriesToProcess = null, string batchId = null) {
+        if (database == null) return 0;
         int resetCount = 0;
-        foreach (var entry in targetEntries) {
-            string currentHash = GenerateHash(entry.EnglishText, entry.Context);
-            foreach (var lang in database.TargetLanguages) {
-                var translation = entry.GetTranslation(lang);
-                if (translation != null && translation.Status == TranslationStatus.OutForBatch) {
-                    if (!string.IsNullOrEmpty(translation.SourceHash) && translation.SourceHash != currentHash) {
-                        translation.Status = TranslationStatus.Dirty;
-                    } else {
-                        translation.Status = TranslationStatus.Untranslated;
-                    }
-                    translation.BatchID = string.Empty;
-                    resetCount++;
-                }
-            }
-        }
-
-        EditorUtility.SetDirty(database);
-        AssetDatabase.SaveAssets();
-        Debug.Log($"[Localization] Reset {resetCount} stuck entries back to Untranslated/Dirty.");
-    }
-
-    public static void ClearBatchIDs(LocalizationMasterDatabase database, IEnumerable<LocalizationEntry> entriesToProcess = null) {
-        if (database == null) return;
         var targetEntries = entriesToProcess ?? database.AllEntries;
         foreach (var entry in targetEntries) {
-            foreach (var lang in database.TargetLanguages) {
-                var translation = entry.GetTranslation(lang);
-                if (translation != null) translation.BatchID = string.Empty;
+            foreach (var translation in entry.Translations) {
+                if (batchId != null && (translation.Status != TranslationStatus.OutForBatch || translation.BatchID != batchId)) continue;
+                if (translation.ResetBatchTracking()) resetCount++;
             }
         }
 
         EditorUtility.SetDirty(database);
         AssetDatabase.SaveAssets();
-        Debug.Log($"[Localization] Cleared All Batch IDs.");
+        return resetCount;
     }
 
     public static void ExportLanguageCSV(LocalizationMasterDatabase database, string langCode, IEnumerable<LocalizationEntry> entriesToProcess = null) {
@@ -179,7 +155,7 @@ public static class LocalizationProcessor {
             translation.TranslatedText = hasText ? translatedText : "";
             translation.Status = hasText ? TranslationStatus.Translated : TranslationStatus.Untranslated;
             translation.SourceHash = hasText ? GenerateHash(entry.EnglishText, entry.Context) : "";
-            translation.BatchID = "";
+            translation.ClearBatchTracking();
             imported++;
         }
         EditorUtility.SetDirty(database);

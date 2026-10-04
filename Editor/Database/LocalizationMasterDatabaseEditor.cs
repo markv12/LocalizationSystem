@@ -60,6 +60,7 @@ public class LocalizationMasterDatabaseEditor : Editor {
                             translation.TranslatedText = string.Empty;
                             translation.Status = TranslationStatus.Untranslated;
                             translation.SourceHash = string.Empty;
+                            translation.ClearBatchTracking();
                             count++;
                         }
                     }

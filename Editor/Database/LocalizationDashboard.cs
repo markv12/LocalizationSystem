@@ -69,11 +69,9 @@ public class LocalizationDashboard : EditorWindow {
         var currentEntries = isAllCategories ? null : GetEntriesForCategory(currentCategoryName);
 
         EditorGUILayout.BeginHorizontal();
-        if (GUILayout.Button(isAllCategories ? "Reset Pending Statuses (All)" : $"Reset Pending Statuses ({currentCategoryName})", GUILayout.ExpandWidth(false))) {
-            LocalizationProcessor.ResetPendingStatuses(database, currentEntries);
-        }
-        if (GUILayout.Button(isAllCategories ? "Clear BatchIDs (All)" : $"Clear BatchIDs ({currentCategoryName})", GUILayout.ExpandWidth(false))) {
-            LocalizationProcessor.ClearBatchIDs(database, currentEntries);
+        if (GUILayout.Button(isAllCategories ? "Reset Pending Translations (All)" : $"Reset Pending Translations ({currentCategoryName})", GUILayout.ExpandWidth(false))) {
+            int resetCount = LocalizationProcessor.ResetPendingTranslations(database, currentEntries);
+            Debug.Log($"[Localization] Reset {resetCount} pending translations back to Untranslated/Dirty.");
         }
         EditorGUILayout.EndHorizontal();
 

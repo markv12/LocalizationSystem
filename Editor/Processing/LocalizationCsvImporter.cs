@@ -124,6 +124,7 @@ public static class LocalizationCsvImporter {
                 translation.TranslatedText = translatedText;
                 translation.Status = TranslationStatus.Translated;
                 translation.SourceHash = englishHash;
+                translation.ClearBatchTracking();
             }
         }
 
