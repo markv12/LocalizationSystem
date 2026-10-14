@@ -13,6 +13,12 @@ public class FontLocalizationSettings : ScriptableObject {
     public FontLocalizationSetting other;
 
     private static FontLocalizationSettings instance;
+
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+    private static void ResetRuntimeState() {
+        if (instance != null) instance._fontSupportCache.Clear();
+        instance = null;
+    }
     public static FontLocalizationSettings Instance {
         get {
             if (instance == null) {

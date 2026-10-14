@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
-using Newtonsoft.Json.Linq;
 
 // Text-only Chat Completions + Structured Outputs capabilities, verified 2026-10-04.
 // Do not infer capabilities from a model prefix: new models can have different contracts.
@@ -34,8 +33,8 @@ public static class OpenAITranslationModels {
             .SequenceEqual(Placeholders.Matches(translation ?? "").Cast<Match>().Select(m => m.Value).OrderBy(v => v, StringComparer.Ordinal));
     }
 
-    public static JObject CreateRequest(string customId, string model, ReasoningEffort effort,
-        string systemPrompt, string userPrompt, JObject responseFormat = null, int maxCompletionTokens = MaxCompletionTokens) {
+    public static OpenAIJson.Request CreateRequest(string customId, string model, ReasoningEffort effort,
+        string systemPrompt, string userPrompt, OpenAIJson.ResponseFormat responseFormat = null, int maxCompletionTokens = MaxCompletionTokens) {
         model = model?.Trim();
         if (string.IsNullOrEmpty(model) || !Models.TryGetValue(model, out var supportedEfforts))
             throw new ArgumentException($"Unsupported translation model '{model}'. Select a model from the OpenAI model picker.");
@@ -50,46 +49,37 @@ public static class OpenAITranslationModels {
         if (supportedEfforts.Length > 0 && !supportedEfforts.Contains(effortName))
             throw new ArgumentException($"Model '{model}' does not support reasoning effort '{effortName}'. Supported: {string.Join(", ", supportedEfforts)}.");
 
-        var body = new JObject {
-            ["model"] = model,
-            ["messages"] = new JArray {
-                new JObject { ["role"] = supportedEfforts.Length > 0 ? "developer" : "system", ["content"] = systemPrompt },
-                new JObject { ["role"] = "user", ["content"] = userPrompt }
-            },
-            ["max_completion_tokens"] = maxCompletionTokens
-        };
-        if (supportedEfforts.Length > 0) body["reasoning_effort"] = effortName;
-        if (responseFormat != null) body["response_format"] = responseFormat;
-        return new JObject { ["custom_id"] = customId, ["method"] = "POST", ["url"] = Endpoint, ["body"] = body };
+        return OpenAIJson.CreateRequest(customId, model, supportedEfforts.Length > 0 ? "developer" : "system",
+            systemPrompt, userPrompt, supportedEfforts.Length > 0 ? effortName : null, responseFormat, maxCompletionTokens);
     }
 
     // Only complete, non-refused text can be imported, even when partial text is valid JSON.
-    public static bool TryReadText(JObject result, out string text, out string error) {
+    public static bool TryReadText(OpenAIJson.BatchResult result, out string text, out string error) {
         text = null;
         error = null;
-        if (result["error"] is JObject requestError) {
-            error = requestError["message"]?.ToString() ?? requestError.ToString();
+        if (result.error != null) {
+            error = result.error.message ?? "Batch request failed.";
             return false;
         }
-        var response = result["response"] as JObject;
-        var body = response?["body"] as JObject;
-        if (response?["status_code"]?.Value<int>() != 200 || body == null || body["error"] is JObject) {
-            error = body?["error"]?["message"]?.ToString() ?? "Missing or unsuccessful batch response.";
+        var response = result.response;
+        var body = response?.body;
+        if (response?.status_code != 200 || body == null || body.error != null) {
+            error = body?.error?.message ?? "Missing or unsuccessful batch response.";
             return false;
         }
-        var choice = (body["choices"] as JArray)?.FirstOrDefault() as JObject;
-        var message = choice?["message"] as JObject;
-        string refusal = message?["refusal"]?.ToString();
-        if (choice?["finish_reason"]?.ToString() != "stop" || !string.IsNullOrEmpty(refusal)) {
-            error = !string.IsNullOrEmpty(refusal) ? refusal : $"Incomplete response ({choice?["finish_reason"]}). Increase the token budget or reduce chunk size for token exhaustion.";
+        var choice = body.choices?.FirstOrDefault();
+        var message = choice?.message;
+        string refusal = message?.refusal;
+        if (choice?.finish_reason != "stop" || !string.IsNullOrEmpty(refusal)) {
+            error = !string.IsNullOrEmpty(refusal) ? refusal : $"Incomplete response ({choice?.finish_reason}). Increase the token budget or reduce chunk size for token exhaustion.";
             return false;
         }
-        var content = message?["content"];
-        if (content?.Type != JTokenType.String || string.IsNullOrWhiteSpace(content.Value<string>())) {
+        var content = message?.content;
+        if (string.IsNullOrWhiteSpace(content)) {
             error = "Response contains no translation text.";
             return false;
         }
-        text = content.Value<string>();
+        text = content;
         return true;
     }
 }

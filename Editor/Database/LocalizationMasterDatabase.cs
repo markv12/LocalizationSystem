@@ -31,14 +31,13 @@ public class LanguageTranslation : ISerializationCallbackReceiver {
     public TranslationStatus Status;
     [HideInInspector] public string SourceHash;
     // One serialized field, populated only while a translation is out for a batch.
-    [SerializeField, HideInInspector, Newtonsoft.Json.JsonProperty]
+    [SerializeField, HideInInspector]
     private string BatchTracking;
     private static readonly string[] EmptyTracking = { "", "", "" };
 
-    [Newtonsoft.Json.JsonIgnore]
     public string BatchID => ReadTracking()[0];
-    [Newtonsoft.Json.JsonIgnore] public string BatchRequestId => ReadTracking()[1];
-    [Newtonsoft.Json.JsonIgnore] public string BatchSourceHash => ReadTracking()[2];
+    public string BatchRequestId => ReadTracking()[1];
+    public string BatchSourceHash => ReadTracking()[2];
 
     public bool MatchesBatchRequest(string batchId, string requestId, string sourceHash) {
         if (Status != TranslationStatus.OutForBatch) return false;

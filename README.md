@@ -17,8 +17,10 @@ Or add directly to `Packages/manifest.json`:
 
 ### Dependencies
 - **TextMeshPro** (`com.unity.ugui`)
-- **RTLTMPro** (optional, for Arabic / RTL support: [github.com/pnarimani/RTLTMPro](https://github.com/pnarimani/RTLTMPro))
+- **RTLTMPro** (required; install [RTLTMPro](https://github.com/pnarimani/RTLTMPro) before this package)
 - **Python 3 + fonttools** (optional, only needed when rebuilding merged Noto font atlases: `pip install fonttools`)
+
+Translation tools use Unity's built-in `JsonUtility`; no external JSON library is required. Existing localization assets, batch tracking, and Steam source hashes retain their formats.
 
 ---
 
@@ -36,6 +38,8 @@ By default, the active language is saved in `PlayerPrefs` (`"SelectedLanguage"`)
 Localizer.GetSavedLanguage = () => MySettings.Language;
 Localizer.SetSavedLanguage = (lang) => MySettings.Language = lang;
 ```
+
+Runtime language, font, and sprite caches reset at each Play Mode entry, including when domain reload is disabled. Language-change subscriptions reconnect when components are enabled. The persisted language and custom save callbacks are preserved; assign callbacks to a persistent save service or reassign them during project startup if they capture scene objects.
 
 ---
 
@@ -77,6 +81,8 @@ Localizer.LoadLanguage("japanese");
 // Listen for language changes
 Localizer.LanguageChangedEvent += OnLanguageChanged;
 ```
+
+Text lookup and UI components fall back to the baked English entry when a key is missing from the selected language. `TryGetText` remains a selected-language-only lookup; use `TryGetTextOrEnglish` when you want fallback without displaying a raw key.
 
 ---
 

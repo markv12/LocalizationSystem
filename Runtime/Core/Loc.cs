@@ -13,10 +13,7 @@ public static class Loc {
     /// where a missing entry should still read as English/fallback instead of raw key.
     /// </summary>
     public static string GetOr(string key, string fallback) {
-        if (!string.IsNullOrEmpty(key)) {
-            if (Localizer.TryGetText(key, out string text)) return RTLHelper.Shape(text);
-            if (Localizer.TryGetEnglishText(key, out string english)) return RTLHelper.Shape(english);
-        }
+        if (!string.IsNullOrEmpty(key) && Localizer.TryGetTextOrEnglish(key, out string text)) return RTLHelper.Shape(text);
         return RTLHelper.Shape(fallback);
     }
 

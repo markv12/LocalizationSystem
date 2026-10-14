@@ -13,6 +13,12 @@ public class SpriteLocalizer : ScriptableObject {
     private readonly Dictionary<string, SpriteSet> spriteDictionary = new Dictionary<string, SpriteSet>(16);
 
     private static SpriteLocalizer instance;
+
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+    private static void ResetRuntimeState() {
+        if (instance != null) instance.spriteDictionary.Clear();
+        instance = null;
+    }
     public static SpriteLocalizer Instance {
         get {
             if (instance == null) {

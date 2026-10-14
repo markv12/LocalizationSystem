@@ -26,7 +26,7 @@ public class SteamPageTranslatorWindow : EditorWindow {
     }
 
     private string GetSourceHash(string englishText) => LocalizationProcessor.GenerateHash(englishText,
-        Newtonsoft.Json.JsonConvert.SerializeObject(new { title = _gameTitle, context = _gameContext }));
+        OpenAIJson.SerializeSourceContext(_gameTitle, _gameContext));
 
     [MenuItem("Window/Localization/Steam Page Translator")]
     public static void ShowWindow() {
@@ -213,7 +213,7 @@ Guidelines:
                     var req = OpenAITranslationModels.CreateRequest($"{keyEntry.Key}|{lang.langCode}", _model, _effort,
                         systemPrompt, $"Localize the following text into {lang.displayName}:\n\n{englishText}",
                         maxCompletionTokens: _maxCompletionTokens);
-                    requests.Add(Newtonsoft.Json.JsonConvert.SerializeObject(req));
+                    requests.Add(req.Json);
                 }
             }
         }
@@ -225,8 +225,8 @@ Guidelines:
         var lines = jsonContent.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
         foreach (var line in lines) {
             try {
-                var obj = Newtonsoft.Json.Linq.JObject.Parse(line);
-                string customId = obj["custom_id"]?.ToString();
+                var obj = OpenAIJson.ReadBatchResult(line);
+                string customId = obj.custom_id;
                 if (!OpenAITranslationModels.TryReadText(obj, out string translatedText, out string error)) {
                     Debug.LogWarning($"[Steam Translation] Skipped {customId}: {error}");
                     continue;

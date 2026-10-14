@@ -41,14 +41,14 @@ public static class UILocalization {
         PropertyInfo labelProperty = LabelProperty(element.GetType());
         if (labelProperty != null) {
             string current = (string)labelProperty.GetValue(element);
-            if (!string.IsNullOrEmpty(current) && Localizer.TryGetText(key, out string label))
+            if (!string.IsNullOrEmpty(current) && Localizer.TryGetTextOrEnglish(key, out string label))
                 labelProperty.SetValue(element, RTLHelper.Shape(label));
         } else if (element is TextElement text) {
-            if (!string.IsNullOrEmpty(text.text) && Localizer.TryGetText(key, out string value))
+            if (!string.IsNullOrEmpty(text.text) && Localizer.TryGetTextOrEnglish(key, out string value))
                 text.text = RTLHelper.Shape(value);
         }
 
-        if (!string.IsNullOrEmpty(element.tooltip) && Localizer.TryGetText(key + TOOLTIP_SUFFIX, out string tip))
+        if (!string.IsNullOrEmpty(element.tooltip) && Localizer.TryGetTextOrEnglish(key + TOOLTIP_SUFFIX, out string tip))
             element.tooltip = RTLHelper.Shape(tip);
     }
 

@@ -10,6 +10,7 @@ public class UIDocumentLocalizer : MonoBehaviour {
     private string _prefix;
 
     private void OnEnable() {
+        Localizer.LanguageChangedEvent -= Apply;
         _document = GetComponent<UIDocument>();
         _prefix = UILocalization.DocumentPrefix(_document.visualTreeAsset != null ? _document.visualTreeAsset.name : null);
         Apply();

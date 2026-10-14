@@ -88,7 +88,7 @@ public static class LocalizationProcessor {
             Directory.CreateDirectory(tempDir);
             string jsonlPath = Path.Combine(tempDir, "batch_preview.jsonl");
 
-            string jsonlContent = string.Join("\n", requests.Select(r => Newtonsoft.Json.JsonConvert.SerializeObject(r)));
+            string jsonlContent = string.Join("\n", requests.Select(r => r.Json));
             File.WriteAllText(jsonlPath, jsonlContent);
             Debug.Log($"<b>[Localization] Batch Preview Saved</b>: {jsonlPath}");
         }

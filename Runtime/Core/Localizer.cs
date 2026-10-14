@@ -24,6 +24,19 @@ public static partial class Localizer {
     private static List<string> languageList;
     public static bool languageLoaded = false;
 
+    // Runs at every player/play-session startup, even without a domain reload.
+    // Save callbacks are configuration; keep them and the persisted language intact.
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+    private static void ResetRuntimeState() {
+        currentLanguageAsset = null;
+        englishLanguageDictionary = null;
+        currentLanguageDictionary = null;
+        currentLanguage = null;
+        languageList = null;
+        languageLoaded = false;
+        LanguageChangedEvent = null;
+    }
+
     public static List<string> LanguageList {
         get {
             if (languageList == null) {
@@ -91,8 +104,8 @@ public static partial class Localizer {
     }
 
     public static string GetText(string key) {
-        if (!TryGetText(key, out string result)) {
-            Debug.LogError($"[Localizer] Key not found in language dictionary: '{key}' (Language: {currentLanguage})");
+        if (!TryGetTextOrEnglish(key, out string result)) {
+            Debug.LogError($"[Localizer] Key not found in '{currentLanguage}' or English: '{key}'");
             return key;
         }
         return result;
@@ -123,10 +136,11 @@ public static partial class Localizer {
     }
 
     public static string GetTextOrEnglish(string key) {
-        if (TryGetText(key, out string result)) return result;
-        if (TryGetEnglishText(key, out string english)) return english;
-        return key;
+        return TryGetTextOrEnglish(key, out string result) ? result : key;
     }
+
+    public static bool TryGetTextOrEnglish(string key, out string result) =>
+        TryGetText(key, out result) || TryGetEnglishText(key, out result);
 
     public static string Format(string key, params object[] args) {
         string pattern = GetTextOrEnglish(key);

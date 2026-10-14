@@ -4,8 +4,6 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
 using UnityEditor;
 using UnityEngine;
 
@@ -19,15 +17,15 @@ public static class BatchHandler {
         public string SourceHash;
     }
 
-    public static List<object> BuildRequests(LocalizationMasterDatabase database, List<string> targetLanguages, out List<LanguageTranslation> pending, IEnumerable<LocalizationEntry> entriesToProcess = null) {
+    public static List<OpenAIJson.Request> BuildRequests(LocalizationMasterDatabase database, List<string> targetLanguages, out List<LanguageTranslation> pending, IEnumerable<LocalizationEntry> entriesToProcess = null) {
         return BuildRequests(database, targetLanguages, out pending, out _, entriesToProcess);
     }
 
-    private static List<object> BuildRequests(LocalizationMasterDatabase database, List<string> targetLanguages,
+    private static List<OpenAIJson.Request> BuildRequests(LocalizationMasterDatabase database, List<string> targetLanguages,
         out List<LanguageTranslation> pending, out List<Submission> submissions, IEnumerable<LocalizationEntry> entriesToProcess) {
         if (database == null) throw new ArgumentNullException(nameof(database));
         if (targetLanguages == null) throw new ArgumentNullException(nameof(targetLanguages));
-        var requests = new List<object>();
+        var requests = new List<OpenAIJson.Request>();
         pending = new List<LanguageTranslation>();
         submissions = new List<Submission>();
         var targetEntries = (entriesToProcess ?? database.AllEntries).Distinct().ToList();
@@ -48,12 +46,12 @@ public static class BatchHandler {
 
             for (int i = 0; i < toTranslate.Count; i += ChunkSize) {
                 var chunk = toTranslate.GetRange(i, Math.Min(ChunkSize, toTranslate.Count - i));
-                var request = (JObject)CreateBatchRequestObject(database, lang, chunk, i / ChunkSize);
+                var request = CreateBatchRequestObject(database, lang, chunk, i / ChunkSize);
                 requests.Add(request);
                 foreach (var entry in chunk) {
                     submissions.Add(new Submission {
                         Translation = entry.GetTranslation(lang),
-                        RequestId = request["custom_id"].Value<string>(),
+                        RequestId = request.CustomId,
                         SourceHash = LocalizationProcessor.GenerateHash(entry.EnglishText, entry.Context)
                     });
                 }
@@ -74,7 +72,7 @@ public static class BatchHandler {
             Debug.LogWarning("[Localization] A batch submission for this database is already in progress.");
             return;
         }
-        List<object> requests;
+        List<OpenAIJson.Request> requests;
         List<Submission> submissions;
         try {
             requests = BuildRequests(database, targetLanguages, out _, out submissions, entriesToProcess);
@@ -94,7 +92,7 @@ public static class BatchHandler {
 
         Task.Run(async () => {
             try {
-                File.WriteAllText(tempPath, string.Join("\n", requests.Select(r => JsonConvert.SerializeObject(r))));
+                File.WriteAllText(tempPath, string.Join("\n", requests.Select(r => r.Json)));
                 if (new FileInfo(tempPath).Length > 200L * 1000 * 1000)
                     throw new InvalidOperationException("OpenAI batch input exceeds 200 MB. Submit fewer entries or languages.");
 
@@ -181,9 +179,9 @@ public static class BatchHandler {
     private static void LogBatchErrors(string content) {
         foreach (var line in content.Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries)) {
             try {
-                var result = JObject.Parse(line);
+                var result = OpenAIJson.ReadBatchResult(line);
                 OpenAITranslationModels.TryReadText(result, out _, out string error);
-                Debug.LogError($"[Localization] Request failed ({result["custom_id"]}): {error}");
+                Debug.LogError($"[Localization] Request failed ({result.custom_id}): {error}");
             } catch (Exception e) {
                 Debug.LogError($"[Localization] Malformed batch error line: {e.Message}");
             }
@@ -194,22 +192,19 @@ public static class BatchHandler {
         int successCount = 0;
         foreach (var line in content.Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries)) {
             try {
-                var result = JObject.Parse(line);
-                string customId = result["custom_id"]?.Value<string>();
+                var result = OpenAIJson.ReadBatchResult(line);
+                string customId = result.custom_id;
                 if (string.IsNullOrEmpty(customId) || customId.IndexOf('|') <= 0) continue;
                 string lang = customId.Split('|')[0];
                 if (!OpenAITranslationModels.TryReadText(result, out string jsonResponse, out string error)) {
                     Debug.LogError($"[Localization] Request {customId}: {error}");
                     continue;
                 }
-                if (JObject.Parse(jsonResponse)["translations"] is JArray translations) {
-                    var seenKeys = new HashSet<string>(StringComparer.Ordinal);
-                    if (translations.Any(t => !(t is JObject) || t["key"]?.Type != JTokenType.String ||
-                        t["text"]?.Type != JTokenType.String || !seenKeys.Add(t["key"].Value<string>())))
-                        throw new InvalidDataException("Translation response has invalid or duplicate keys/text.");
+                var translations = OpenAIJson.ReadTranslations(jsonResponse);
+                if (translations != null) {
                     foreach (var t in translations) {
-                        string key = t["key"].Value<string>();
-                        string text = t["text"].Value<string>();
+                        string key = t.key;
+                        string text = t.text;
                         var entry = database.FindEntry(key);
                         if (entry == null) continue;
                         var translation = entry.GetTranslation(lang);
@@ -243,34 +238,10 @@ public static class BatchHandler {
         if (count > 0) Debug.LogWarning($"[Localization] {count} unresolved translations returned to Untranslated/Dirty for retry.");
     }
 
-    public static object CreateBatchRequestObject(LocalizationMasterDatabase database, string lang, List<LocalizationEntry> entries, int chunkIndex) {
+    public static OpenAIJson.Request CreateBatchRequestObject(LocalizationMasterDatabase database, string lang, List<LocalizationEntry> entries, int chunkIndex) {
         if (entries == null || entries.Count == 0) throw new ArgumentException("A translation chunk cannot be empty.");
-        var responseFormat = JObject.FromObject(new {
-            type = "json_schema",
-            json_schema = new {
-                name = "translation_response",
-                strict = true,
-                schema = new {
-                    type = "object",
-                    properties = new {
-                        translations = new {
-                            type = "array",
-                            items = new {
-                                type = "object",
-                                properties = new {
-                                    key  = new { type = "string", @enum = entries.Select(e => e.Key).ToArray() },
-                                    text = new { type = "string" }
-                                },
-                                required = new[] { "key", "text" },
-                                additionalProperties = false
-                            }
-                        }
-                    },
-                    required = new[] { "translations" },
-                    additionalProperties = false
-                }
-            }
-        });
+        var responseFormat = new OpenAIJson.ResponseFormat();
+        responseFormat.json_schema.schema.properties.translations.items.properties.key.@enum = entries.Select(e => e.Key).ToArray();
         return OpenAITranslationModels.CreateRequest($"{lang}|chunk_{chunkIndex}_{Guid.NewGuid().ToString("N").Substring(0, 16)}",
             database.OpenAIModel, database.Effort, ConstructSystemPrompt(database, lang), ConstructUserPrompt(entries), responseFormat, database.MaxCompletionTokens);
     }
@@ -301,8 +272,8 @@ public static class BatchHandler {
     }
 
     public static string ConstructUserPrompt(List<LocalizationEntry> entries) {
-        return JsonConvert.SerializeObject(new { items = entries.Select(entry => new {
+        return OpenAIJson.SerializePrompt(new OpenAIJson.Prompt { items = entries.Select(entry => new OpenAIJson.PromptItem {
             key = entry.Key, text = entry.EnglishText, context = entry.Context
-        }) });
+        }).ToArray() });
     }
 }

@@ -5,8 +5,6 @@ using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Threading.Tasks;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
 using UnityEditor;
 using UnityEngine;
 
@@ -82,7 +80,7 @@ public static class OpenAIBatchAPI {
                 var response = await client.PostAsync(FILES_URL, form);
                 var body = await response.Content.ReadAsStringAsync();
                 if (response.IsSuccessStatusCode)
-                    return JObject.Parse(body)["id"]?.ToString();
+                    return OpenAIJson.ReadFileId(body);
                 Debug.LogError($"[OpenAI] Upload failed: {response.StatusCode}\n{body}");
                 return null;
             }
@@ -91,7 +89,7 @@ public static class OpenAIBatchAPI {
 
     public static async Task<string> CreateBatchAsync(string apiKey, string fileId) {
         using (var client = CreateClient(apiKey)) {
-            var payload = JsonConvert.SerializeObject(new {
+            var payload = JsonUtility.ToJson(new OpenAIJson.CreateBatch {
                 input_file_id = fileId,
                 endpoint = OpenAITranslationModels.Endpoint,
                 completion_window = "24h"
@@ -100,7 +98,7 @@ public static class OpenAIBatchAPI {
                 new StringContent(payload, Encoding.UTF8, "application/json"));
             var body = await response.Content.ReadAsStringAsync();
             if (response.IsSuccessStatusCode)
-                return JObject.Parse(body)["id"]?.ToString();
+                return OpenAIJson.ReadFileId(body);
             Debug.LogError($"[OpenAI] Batch creation failed: {response.StatusCode}\n{body}");
             return null;
         }
@@ -114,25 +112,29 @@ public static class OpenAIBatchAPI {
                 Debug.LogError($"[OpenAI] Status check failed: {response.StatusCode}\n{body}");
                 return null;
             }
-            var json = JObject.Parse(body);
-            var counts = json["request_counts"] as JObject;
-            var statusResult = new BatchStatusResult {
-                Status       = json["status"]?.ToString(),
-                OutputFileId = json["output_file_id"]?.ToString(),
-                ErrorFileId  = json["error_file_id"]?.ToString(),
-                Total        = counts?["total"]?.Value<int>() ?? 0,
-                Completed    = counts?["completed"]?.Value<int>() ?? 0,
-                Failed       = counts?["failed"]?.Value<int>() ?? 0,
-            };
-            if (json["errors"] is JObject errorsObj && errorsObj["data"] is JArray errorsData) {
-                foreach (var err in errorsData) {
-                    string msg = err["message"]?.ToString();
-                    if (!string.IsNullOrEmpty(msg))
-                        statusResult.Errors.Add(msg);
-                }
-            }
-            return statusResult;
+            return ParseBatchStatus(body);
         }
+    }
+
+    private static BatchStatusResult ParseBatchStatus(string body) {
+        var json = OpenAIJson.ReadBatchStatus(body);
+        var counts = json.request_counts;
+        var statusResult = new BatchStatusResult {
+            Status       = json.status,
+            OutputFileId = json.output_file_id,
+            ErrorFileId  = json.error_file_id,
+            Total        = counts?.total ?? 0,
+            Completed    = counts?.completed ?? 0,
+            Failed       = counts?.failed ?? 0,
+        };
+        if (json.errors?.data != null) {
+            foreach (var err in json.errors.data) {
+                string msg = err?.message;
+                if (!string.IsNullOrEmpty(msg))
+                    statusResult.Errors.Add(msg);
+            }
+        }
+        return statusResult;
     }
 
     public static async Task<string> DownloadFileContentAsync(string apiKey, string fileId) {
