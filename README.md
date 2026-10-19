@@ -99,19 +99,33 @@ Open **Window → Localization → Localization Dashboard**:
 3. **Bake to Resources**:
    - Click **Bake** to compile the strings into runtime assets under `Assets/Resources/Languages/`.
 
-The database model picker supports **GPT-6 Astra**, **GPT-6.1 Sol**, **GPT-6 Sol**, **GPT-6 Luna**, the GPT-5.6 tiers, GPT-5.5, GPT-5.2, GPT-4o, and GPT-4o Mini. New databases default to `gpt-6-luna` with low reasoning effort; existing assets retain their saved model. The Steam Page Translator has its own model, effort, and output budget controls, defaulting to `gpt-6.1-sol` with medium effort.
+The database model picker supports **GPT-6 Astra**, **GPT-6.1 Sol**, **GPT-6 Sol**, **GPT-6 Luna**, the GPT-5.6 tiers, GPT-5.5, GPT-5.2, GPT-4o, and GPT-4o Mini. New databases default to `gpt-6-luna` with low reasoning effort; existing assets retain their saved model. The Steam Content Translator has its own saved model, effort, and output budget controls, defaulting to `gpt-6.1-sol` with medium effort.
 
 Both workflows use text-only **Chat Completions through the Batch API**, which the [official GPT-6 guide](https://developers.openai.com/api/docs/guides/latest-model) supports. The database workflow uses strict JSON Schema; Steam translations return plain text. Requests omit reasoning parameters for GPT-4o models and validate supported reasoning efforts before upload. `None` is unavailable for Astra and GPT-6.1 Sol; `Max` is unavailable for GPT-5.5 and GPT-5.2. Unknown model IDs are rejected until their capabilities are added to `OpenAITranslationModels`.
 
 **Output Token Budget** defaults to 16,000 tokens per request and includes reasoning tokens. Increase it if a response exhausts its budget (up to 128,000 for the supported reasoning models or 16,384 for GPT-4o models). Refusals, truncated responses, invalid JSON, duplicate result keys, and changed formatting placeholders are skipped. Successful partial results from completed, expired, or cancelled batches are imported; unresolved database translations return to Untranslated/Dirty for retry. Failed downloads leave pending translations intact for another status check.
 
-New database submissions store the request ID and source hash to reject stale results and preserve approved translations. The Steam window stores source hashes for its latest submitted batch and preserves CSV column order and row metadata. Steam batch IDs entered manually lack submission snapshots, so source changes cannot be detected for those results. Steam CSVs must have unique `key`/`language` pairs; keys cannot contain `|` and must fit the Batch API's 64-character custom ID limit with the language suffix. API model availability still depends on your project's access and limits.
+New database submissions store the request ID and source hash to reject stale results and preserve approved translations. The Steam window stores source hashes and request IDs for its latest submitted batch and preserves CSV column order, row order, language spelling, and row metadata. Steam batch IDs entered manually lack submission snapshots, so source changes cannot be detected for those results. Steam CSVs must have unique `key`/`language` (store) or `field`/`language` (event) pairs; keys cannot contain `|` and must fit the Batch API's 64-character custom ID limit with the language suffix. API model availability still depends on your project's access and limits.
 
 Per translation, pending batch ID, request ID, and submitted source hash share a single hidden `BatchTracking` string. Its versioned, length-prefixed encoding supports underscores and delimiters without ambiguity. The field is cleared after a successful import, terminal-batch recovery, CSV replacement, or manual reset; serialization also clears leftover tracking on any non-pending translation. The single **Reset Pending Translations** recovery button clears tracking for the selected category or all entries, including languages removed from the target list. Pending entries with previous text become Dirty; those without text become Untranslated. Completed and approved translations retain their text and status. The separate `SourceHash` remains because it identifies the source of the accepted translation.
 
 Upgrades assume there are no active batches. Previous batch-tracking fields are ignored; translation text, status, and accepted-source hashes remain intact. No batch migration or asset-format conversion is needed.
 
 Offline regression checks and optional compilation against installed Unity assemblies are documented in `Tests~/OpenAITranslation/README.md`.
+
+### Steam Store Pages and Events
+
+Open **Window → Localization → Steam Content Translator** (the previous **Steam Page Translator** menu also opens it).
+
+1. Choose **Store Page** for a CSV with `key,language,text` columns, or **Event** for Steam's CSV export with `field,language,value` columns. The other event CSV layouts and XML are not supported.
+2. Select the source CSV. Event fields with empty English text are left empty; existing target translations are preserved.
+3. Set the game title, game context, and optional protected names (one per line). The window automatically creates `Assets/SteamTranslationSettings.asset`, migrating existing window values when first created. These settings, model controls, and target languages are saved in the project and shared by both content types. Commit the asset and its `.meta` file to share defaults with teammates. Additional settings assets can be created via **Assets → Create → Localization → Steam Translation Settings** and selected in the window; with no saved selection, the first asset in path order is used. Global context from the master database seeds a new settings asset if no window context exists.
+4. For events, optionally add **Event Notes** specific to this announcement. Notes stay with the window's selected source and clear when its path changes; they are excluded from the shared settings. Each field is translated with the full English event as reference.
+5. **Submit Batch**, then use **Check/Process Batch** when results are ready. Choose an output filename (default: `<source>_translated.csv` beside the original). Output uses UTF-8 with a BOM, and the source file cannot be overwritten.
+
+BBCode tags and their order, URLs, image references, placeholders, the game title, and protected names are validated before accepting results. Rejected results are reported in the Console. Event `korean` and project `koreana` codes map to the same language; original CSV spellings are retained, and new Korean event rows use `korean`. Source snapshots include game context, protected names, event notes, and the full English event, rejecting results if that guidance changes while a batch is pending. Keep the original CSV path, content type, notes, and context until processing completes. Batch IDs and submission snapshots remain window state; project settings persist independently of the window.
+
+Unity regression checks, including an optional check against a real event export, are documented in `Tests~/SteamTranslation/README.md`.
 
 ---
 

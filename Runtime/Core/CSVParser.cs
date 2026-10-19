@@ -105,7 +105,8 @@ public static class CSVParser {
             end++;
         }
 
-        if (start < data.Length) {
+        // A final empty cell (a file ending in a delimiter) still completes a row.
+        if (start < data.Length || columns.Count > 0) {
             var value = data.Substring(start, end - start);
             if (quoteCount > 0) {
                 value = Unquote(value);

@@ -1,0 +1,33 @@
+param(
+    [string]$UnityEditorPath = 'C:/Program Files/Unity/Hub/Editor/6000.6.5f1/Editor/Unity.exe',
+    [string]$EventCsvPath = ''
+)
+$ErrorActionPreference = 'Stop'
+if (!(Test-Path -LiteralPath $UnityEditorPath)) { throw "Unity editor not found: $UnityEditorPath" }
+$repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
+$projectPath = Join-Path $PSScriptRoot 'UnityProject'
+$editorPath = Join-Path $projectPath 'Assets/Editor'
+New-Item -ItemType Directory -Force -Path $editorPath, (Join-Path $projectPath 'Packages'), (Join-Path $projectPath 'ProjectSettings') | Out-Null
+[IO.File]::WriteAllText((Join-Path $projectPath 'Packages/manifest.json'), '{"dependencies":{}}')
+$version = (Get-Item -LiteralPath $UnityEditorPath).VersionInfo.ProductVersion
+[IO.File]::WriteAllText((Join-Path $projectPath 'ProjectSettings/ProjectVersion.txt'), "m_EditorVersion: $version`n")
+$sourceFiles = @(
+    'Runtime/Core/CSVParser.cs', 'Runtime/Core/SteamLanguageList.cs',
+    'Editor/Database/LocalizationMasterDatabase.cs', 'Editor/Database/LanguageListDrawer.cs',
+    'Editor/OpenAI/OpenAIJson.cs', 'Editor/OpenAI/OpenAITranslationModels.cs', 'Editor/OpenAI/OpenAIBatchAPI.cs',
+    'Editor/OpenAI/SteamContentCsv.cs', 'Editor/OpenAI/SteamContentTranslation.cs',
+    'Editor/OpenAI/SteamTranslationSettings.cs', 'Editor/OpenAI/SteamPageTranslatorWindow.cs'
+)
+foreach ($source in $sourceFiles) { Copy-Item -LiteralPath (Join-Path $repoRoot $source) -Destination $editorPath -Force }
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'SteamTranslationRegression.cs') -Destination $editorPath -Force
+$report = Join-Path $projectPath 'result.txt'
+if (Test-Path -LiteralPath $report) { Remove-Item -LiteralPath $report }
+$log = Join-Path $projectPath 'regression.log'
+$arguments = "-batchmode -nographics -projectPath `"$projectPath`" -executeMethod SteamTranslationRegression.Run -logFile `"$log`""
+if ($EventCsvPath) { $arguments += " -steamEventCsv `"$EventCsvPath`"" }
+$process = Start-Process -FilePath $UnityEditorPath -ArgumentList $arguments -WindowStyle Hidden -PassThru -Wait
+if (Test-Path -LiteralPath $report) { Get-Content -LiteralPath $report }
+if ($process.ExitCode -ne 0 -or !(Test-Path -LiteralPath $report)) {
+    Get-Content -LiteralPath $log -Tail 100
+    throw "Unity regression failed (exit $($process.ExitCode)). See $log"
+}
