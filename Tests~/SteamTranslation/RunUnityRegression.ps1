@@ -5,7 +5,14 @@ param(
 $ErrorActionPreference = 'Stop'
 if (!(Test-Path -LiteralPath $UnityEditorPath)) { throw "Unity editor not found: $UnityEditorPath" }
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
-$projectPath = Join-Path $PSScriptRoot 'UnityProject'
+$projectPath = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot 'UnityProject'))
+$assetsPath = Join-Path $projectPath 'Assets'
+# Rebuild only this harness's generated Assets folder so removed sources cannot linger.
+if (Test-Path -LiteralPath $assetsPath) {
+    $resolvedAssets = (Resolve-Path -LiteralPath $assetsPath).ProviderPath
+    if ($resolvedAssets -ne [IO.Path]::GetFullPath((Join-Path $PSScriptRoot 'UnityProject/Assets'))) { throw 'Unexpected generated Assets path.' }
+    Remove-Item -LiteralPath $resolvedAssets -Recurse -Force
+}
 $editorPath = Join-Path $projectPath 'Assets/Editor'
 New-Item -ItemType Directory -Force -Path $editorPath, (Join-Path $projectPath 'Packages'), (Join-Path $projectPath 'ProjectSettings') | Out-Null
 [IO.File]::WriteAllText((Join-Path $projectPath 'Packages/manifest.json'), '{"dependencies":{}}')
@@ -16,7 +23,7 @@ $sourceFiles = @(
     'Editor/Database/LocalizationMasterDatabase.cs', 'Editor/Database/LanguageListDrawer.cs',
     'Editor/OpenAI/OpenAIJson.cs', 'Editor/OpenAI/OpenAITranslationModels.cs', 'Editor/OpenAI/OpenAIBatchAPI.cs',
     'Editor/OpenAI/SteamContentCsv.cs', 'Editor/OpenAI/SteamContentTranslation.cs',
-    'Editor/OpenAI/SteamTranslationSettings.cs', 'Editor/OpenAI/SteamPageTranslatorWindow.cs'
+    'Editor/OpenAI/SteamContentTranslatorWindow.cs'
 )
 foreach ($source in $sourceFiles) { Copy-Item -LiteralPath (Join-Path $repoRoot $source) -Destination $editorPath -Force }
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'SteamTranslationRegression.cs') -Destination $editorPath -Force

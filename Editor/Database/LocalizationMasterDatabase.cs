@@ -132,6 +132,19 @@ public class LocalizationCategory {
     }
 }
 
+[Serializable]
+public sealed class SteamTranslationSettings {
+    public string GameTitle = "";
+    [TextArea(3, 10)] public string GameContext = "";
+    [Tooltip("One name per line. These names and the game title are preserved exactly.")]
+    [TextArea(2, 6)] public string ProtectedNames = "";
+    [OpenAIModelList] public string Model = "gpt-6.1-sol";
+    public ReasoningEffort Effort = ReasoningEffort.Medium;
+    public int OutputTokenBudget = OpenAITranslationModels.MaxCompletionTokens;
+    [LanguageList] public List<string> TargetLanguages = SteamLanguageList.All
+        .Where(l => l.langCode != "english").Select(l => l.langCode).ToList();
+}
+
 [CreateAssetMenu(fileName = "LocalizationMasterDatabase", menuName = "Localization/Master Database")]
 public class LocalizationMasterDatabase : ScriptableObject, ISerializationCallbackReceiver {
     public string GameGenre;
@@ -167,9 +180,13 @@ public class LocalizationMasterDatabase : ScriptableObject, ISerializationCallba
     [Tooltip("Output token budget per chunk, including reasoning tokens. Increase if responses exhaust the budget.")]
     public int MaxCompletionTokens = OpenAITranslationModels.MaxCompletionTokens;
 
+    [Tooltip("Shared settings for Steam store page and event translations.")]
+    public SteamTranslationSettings SteamTranslation = new SteamTranslationSettings();
+
     public void OnBeforeSerialize() { }
 
     public void OnAfterDeserialize() {
+        if (SteamTranslation == null) SteamTranslation = new SteamTranslationSettings();
         if (AdditionalCategories == null) AdditionalCategories = new List<LocalizationCategory>();
 
         if (InstrumentEntries != null && InstrumentEntries.Count > 0) {

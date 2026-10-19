@@ -142,11 +142,6 @@ public static class OpenAIJson {
         return CanonicalJson(ApplyEdits(json, edits));
     }
 
-    public static string SerializeSourceContext(string title, string context) {
-        // Keep the exact historical escaping used by persisted Steam source hashes.
-        return CanonicalJson("{\"title\":" + Quote(title) + ",\"context\":" + Quote(context) + "}");
-    }
-
     private static string CanonicalJson(string json) {
         json = json.Replace("\u0085", "\\u0085").Replace("\u2028", "\\u2028").Replace("\u2029", "\\u2029");
         char[] normalized = null;

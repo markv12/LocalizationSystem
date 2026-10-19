@@ -17,15 +17,9 @@ public static class SteamContentTranslation {
         using (var hash = SHA256.Create()) return BitConverter.ToString(hash.ComputeHash(Encoding.UTF8.GetBytes(input))).Replace("-", "");
     }
 
-    // Preserve source checks for batches submitted by the previous store-page window.
-    public static string LegacySourceHash(string source, SteamTranslationSettings settings) {
-        string context = OpenAIJson.SerializeSourceContext(settings.GameTitle, settings.GameContext);
-        using (var hash = MD5.Create()) return BitConverter.ToString(hash.ComputeHash(Encoding.UTF8.GetBytes(source + "\0" + context))).Replace("-", "");
-    }
-
     public static List<OpenAIJson.Request> CreateRequests(SteamContentCsv document, SteamTranslationSettings settings, string eventNotes) {
         var targets = (settings.TargetLanguages ?? new List<string>()).Select(SteamContentCsv.NormalizeLanguage).Distinct().ToList();
-        if (targets.Count == 0) throw new InvalidOperationException("Select at least one target language in Steam Translation Settings.");
+        if (targets.Count == 0) throw new InvalidOperationException("Select at least one target language under Steam Translation in the master database.");
         foreach (var code in targets) {
             if (code == "english" || !SteamLanguageList.All.Any(l => l.langCode == code))
                 throw new InvalidOperationException($"Invalid target language '{code}'. Select non-English languages from the language picker.");

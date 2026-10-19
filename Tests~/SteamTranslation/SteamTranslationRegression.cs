@@ -22,7 +22,7 @@ public static class SteamTranslationRegression {
     }
     private static SteamContentCsv Event(string csv) => new SteamContentCsv(CSVParser.LoadFromString(csv), SteamContentType.Event);
     private static SteamTranslationSettings Settings() {
-        var settings = ScriptableObject.CreateInstance<SteamTranslationSettings>();
+        var settings = new SteamTranslationSettings();
         settings.GameTitle = "10 Second Mixtape";
         settings.GameContext = "A cooperative music game.";
         settings.ProtectedNames = "Different Strokes\nDifferent Folks";
@@ -33,7 +33,7 @@ public static class SteamTranslationRegression {
     public static void Run() {
         string report = Path.Combine(Path.GetDirectoryName(Application.dataPath), "result.txt");
         try {
-            RoundTrips(); Validation(); RequestsAndSnapshots(); MergeResults(); SettingsPersistence();
+            DatabaseLifecycle(); RoundTrips(); Validation(); RequestsAndSnapshots(); MergeResults(); SettingsPersistence();
             string[] args = Environment.GetCommandLineArgs();
             int fileArg = Array.IndexOf(args, "-steamEventCsv");
             if (fileArg >= 0) RealExport(args[fileArg + 1]);
@@ -44,6 +44,23 @@ public static class SteamTranslationRegression {
             Debug.LogException(e);
             EditorApplication.Exit(1);
         }
+    }
+
+    private static void DatabaseLifecycle() {
+        LocalizationMasterDatabase.ClearCachedDatabase();
+        var window = ScriptableObject.CreateInstance<SteamContentTranslatorWindow>();
+        Check(Get(window, "_database") == null, "Missing database leaves translator unbound.");
+        Check(Directory.GetFiles(Application.dataPath, "*.asset", SearchOption.AllDirectories).Length == 0, "Window does not create settings assets.");
+        UnityEngine.Object.DestroyImmediate(window);
+        var database = ScriptableObject.CreateInstance<LocalizationMasterDatabase>();
+        Check(database.SteamTranslation.Model == "gpt-6.1-sol" && database.SteamTranslation.Effort == ReasoningEffort.Medium, "Steam defaults initialized inside database.");
+        Check(database.SteamTranslation.TargetLanguages.Count == SteamLanguageList.All.Count - 1, "Steam target defaults initialized.");
+        AssetDatabase.CreateAsset(database, "Assets/LocalizationMasterDatabase.asset");
+        AssetDatabase.SaveAssetIfDirty(database);
+        window = ScriptableObject.CreateInstance<SteamContentTranslatorWindow>();
+        Check((LocalizationMasterDatabase)Get(window, "_database") == database, "Window discovers existing master database.");
+        Check(Directory.GetFiles(Application.dataPath, "*.asset", SearchOption.AllDirectories).Length == 1, "Existing database requires no additional asset.");
+        UnityEngine.Object.DestroyImmediate(window);
     }
 
     private static void RoundTrips() {
@@ -134,9 +151,11 @@ public static class SteamTranslationRegression {
     private static object Get(object target, string field) => target.GetType().GetField(field, BindingFlags.NonPublic | BindingFlags.Instance).GetValue(target);
 
     private static void MergeResults() {
-        var window = ScriptableObject.CreateInstance<SteamPageTranslatorWindow>();
+        var window = ScriptableObject.CreateInstance<SteamContentTranslatorWindow>();
         var settings = Settings();
-        Set(window, "_settings", settings);
+        var database = ScriptableObject.CreateInstance<LocalizationMasterDatabase>();
+        database.SteamTranslation = settings;
+        Set(window, "_database", database);
         Set(window, "_batchId", "test-batch");
         Set(window, "_submittedBatchId", "test-batch");
         Set(window, "_hasDocumentSnapshot", true);
@@ -147,7 +166,7 @@ public static class SteamTranslationRegression {
         snapshotType.GetField("Key").SetValue(snapshot, "title|german");
         snapshotType.GetField("Hash").SetValue(snapshot, SteamContentTranslation.SourceHash(document, "Hello", settings, ""));
         snapshots.Add(snapshot);
-        var merge = typeof(SteamPageTranslatorWindow).GetMethod("MergeResults", BindingFlags.Instance | BindingFlags.NonPublic);
+        var merge = typeof(SteamContentTranslatorWindow).GetMethod("MergeResults", BindingFlags.Instance | BindingFlags.NonPublic);
         string results = Result("title|german", "Partial", "length") + "\n" + Result("title|koreana", "안녕") + "\n"
             + Result("title|german", "Hallo") + "\n" + Result("title|german", "Overwrite");
         Check((int)merge.Invoke(window, new object[] { document, results }) == 1, "Reject truncated, unexpected, and duplicate results.");
@@ -155,24 +174,45 @@ public static class SteamTranslationRegression {
         var changed = Event("field,language,value\ntitle,english,Hello\nbody,english,Changed");
         Check((int)merge.Invoke(window, new object[] { changed, Result("title|german", "Hallo") }) == 0, "Reject changed event context.");
         UnityEngine.Object.DestroyImmediate(window);
+        UnityEngine.Object.DestroyImmediate(database);
     }
 
     private static void SettingsPersistence() {
-        var shared = SteamTranslationSettings.Find();
-        Check(shared != null, "Window creates shared settings.");
-        shared.GameTitle = "Saved Game";
-        shared.GameContext = "Saved Context";
-        shared.ProtectedNames = "Saved Name";
-        shared.TargetLanguages = new List<string> { "japanese" };
-        EditorUtility.SetDirty(shared);
-        AssetDatabase.SaveAssetIfDirty(shared);
-        string path = AssetDatabase.GetAssetPath(shared);
+        var database = LocalizationMasterDatabase.LoadDatabase();
+        database.GlobalContext = "Existing game context";
+        database.Entries.Add(new LocalizationEntry { Key = "retained", EnglishText = "Existing string" });
+        string originalModel = database.OpenAIModel;
+        var serialized = new SerializedObject(database);
+        serialized.Update();
+        var settings = serialized.FindProperty("SteamTranslation");
+        settings.FindPropertyRelative("GameTitle").stringValue = "Saved Game";
+        settings.FindPropertyRelative("GameContext").stringValue = "Saved Context";
+        settings.FindPropertyRelative("ProtectedNames").stringValue = "Saved Name";
+        settings.FindPropertyRelative("Model").stringValue = "gpt-4o";
+        settings.FindPropertyRelative("Effort").intValue = (int)ReasoningEffort.High;
+        settings.FindPropertyRelative("OutputTokenBudget").intValue = 8192;
+        var languages = settings.FindPropertyRelative("TargetLanguages");
+        languages.arraySize = 1;
+        languages.GetArrayElementAtIndex(0).stringValue = "japanese";
+        serialized.ApplyModifiedProperties();
+        AssetDatabase.SaveAssetIfDirty(database);
+        string path = AssetDatabase.GetAssetPath(database);
         AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceUpdate);
-        var reopened = ScriptableObject.CreateInstance<SteamPageTranslatorWindow>();
-        var restored = (SteamTranslationSettings)Get(reopened, "_settings");
+        LocalizationMasterDatabase.ClearCachedDatabase();
+        var reopened = ScriptableObject.CreateInstance<SteamContentTranslatorWindow>();
+        var reloaded = (LocalizationMasterDatabase)Get(reopened, "_database");
+        var restored = reloaded.SteamTranslation;
         Check(restored.GameTitle == "Saved Game" && restored.GameContext == "Saved Context", "Restore title/context in new window.");
         Check(restored.ProtectedNames == "Saved Name" && restored.TargetLanguages.SequenceEqual(new[] { "japanese" }), "Restore other defaults.");
-        Check(File.ReadAllText(Path.GetFullPath(path)).Contains("Saved Game"), "Settings on disk.");
+        Check(restored.Model == "gpt-4o" && restored.Effort == ReasoningEffort.High && restored.OutputTokenBudget == 8192, "Restore Steam model controls.");
+        Check(File.ReadAllText(Path.GetFullPath(path)).Contains("Saved Game"), "Steam settings saved in database on disk.");
+        Check(reloaded.GlobalContext == "Existing game context" && reloaded.OpenAIModel == originalModel && reloaded.TargetLanguages.Count == 0, "In-game settings preserved independently.");
+        Check(reloaded.FindEntry("retained")?.EnglishText == "Existing string", "Localization entries preserved.");
+        var decoded = ScriptableObject.CreateInstance<LocalizationMasterDatabase>();
+        EditorJsonUtility.FromJsonOverwrite(EditorJsonUtility.ToJson(reloaded), decoded);
+        Check(decoded.SteamTranslation.GameTitle == "Saved Game" && decoded.SteamTranslation.TargetLanguages.Single() == "japanese", "Database serialization includes nested settings.");
+        Check(Directory.GetFiles(Application.dataPath, "*.asset", SearchOption.AllDirectories).Length == 1, "No separate Steam settings asset created.");
+        UnityEngine.Object.DestroyImmediate(decoded);
         UnityEngine.Object.DestroyImmediate(reopened);
     }
 

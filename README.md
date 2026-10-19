@@ -20,7 +20,7 @@ Or add directly to `Packages/manifest.json`:
 - **RTLTMPro** (required; install [RTLTMPro](https://github.com/pnarimani/RTLTMPro) before this package)
 - **Python 3 + fonttools** (optional, only needed when rebuilding merged Noto font atlases: `pip install fonttools`)
 
-Translation tools use Unity's built-in `JsonUtility`; no external JSON library is required. Existing localization assets, batch tracking, and Steam source hashes retain their formats.
+Translation tools use Unity's built-in `JsonUtility`; no external JSON library is required.
 
 ---
 
@@ -115,15 +115,15 @@ Offline regression checks and optional compilation against installed Unity assem
 
 ### Steam Store Pages and Events
 
-Open **Window → Localization → Steam Content Translator** (the previous **Steam Page Translator** menu also opens it).
+Open **Window → Localization → Steam Content Translator**.
 
 1. Choose **Store Page** for a CSV with `key,language,text` columns, or **Event** for Steam's CSV export with `field,language,value` columns. The other event CSV layouts and XML are not supported.
 2. Select the source CSV. Event fields with empty English text are left empty; existing target translations are preserved.
-3. Set the game title, game context, and optional protected names (one per line). The window automatically creates `Assets/SteamTranslationSettings.asset`, migrating existing window values when first created. These settings, model controls, and target languages are saved in the project and shared by both content types. Commit the asset and its `.meta` file to share defaults with teammates. Additional settings assets can be created via **Assets → Create → Localization → Steam Translation Settings** and selected in the window; with no saved selection, the first asset in path order is used. Global context from the master database seeds a new settings asset if no window context exists.
+3. Select your **Master Database**. Set the game title, game context, and optional protected names (one per line). These settings, Steam model controls, and Steam target languages are stored directly in the database's **Steam Translation** section and shared by both content types. Edit them in the translator or the database Inspector; changes in the translator save automatically to that database asset. Steam defaults remain independent of the database's in-game translation settings. No separate settings asset is created, and previous standalone Steam settings are not migrated.
 4. For events, optionally add **Event Notes** specific to this announcement. Notes stay with the window's selected source and clear when its path changes; they are excluded from the shared settings. Each field is translated with the full English event as reference.
 5. **Submit Batch**, then use **Check/Process Batch** when results are ready. Choose an output filename (default: `<source>_translated.csv` beside the original). Output uses UTF-8 with a BOM, and the source file cannot be overwritten.
 
-BBCode tags and their order, URLs, image references, placeholders, the game title, and protected names are validated before accepting results. Rejected results are reported in the Console. Event `korean` and project `koreana` codes map to the same language; original CSV spellings are retained, and new Korean event rows use `korean`. Source snapshots include game context, protected names, event notes, and the full English event, rejecting results if that guidance changes while a batch is pending. Keep the original CSV path, content type, notes, and context until processing completes. Batch IDs and submission snapshots remain window state; project settings persist independently of the window.
+BBCode tags and their order, URLs, image references, placeholders, the game title, and protected names are validated before accepting results. Rejected results are reported in the Console. Event `korean` and project `koreana` codes map to the same language; original CSV spellings are retained, and new Korean event rows use `korean`. Source snapshots include game context, protected names, event notes, and the full English event, rejecting results if that guidance changes while a batch is pending. Keep the original CSV path, content type, notes, and context until processing completes. Batch IDs and submission snapshots remain window state; Steam settings persist in the master database independently of the window.
 
 Unity regression checks, including an optional check against a real event export, are documented in `Tests~/SteamTranslation/README.md`.
 
