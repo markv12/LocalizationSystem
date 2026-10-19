@@ -135,7 +135,6 @@ public class LocalizationCategory {
 [Serializable]
 public sealed class SteamTranslationSettings {
     public string GameTitle = "";
-    [TextArea(3, 10)] public string GameContext = "";
     [Tooltip("One name per line. These names and the game title are preserved exactly.")]
     [TextArea(2, 6)] public string ProtectedNames = "";
     [OpenAIModelList] public string Model = "gpt-6.1-sol";
@@ -154,21 +153,8 @@ public class LocalizationMasterDatabase : ScriptableObject, ISerializationCallba
 
     public List<LocalizationEntry> Entries = new List<LocalizationEntry>();
 
-    [Tooltip("Additional entry collections for external systems (e.g. Items, Dialogue, Instruments, Scales)")]
+    [Tooltip("Named collections of localization entries for project-defined content.")]
     public List<LocalizationCategory> AdditionalCategories = new List<LocalizationCategory>();
-
-    // Backward compatibility for legacy assets that serialized direct lists
-    [SerializeField, HideInInspector]
-    private List<LocalizationEntry> InstrumentEntries;
-
-    [SerializeField, HideInInspector]
-    private List<LocalizationEntry> ScaleEntries;
-
-    [SerializeField, HideInInspector]
-    private List<LocalizationEntry> ItemEntries;
-
-    [SerializeField, HideInInspector]
-    private List<LocalizationEntry> DialogueEntries;
 
     [LanguageList]
     public List<string> TargetLanguages = new List<string>();
@@ -188,50 +174,6 @@ public class LocalizationMasterDatabase : ScriptableObject, ISerializationCallba
     public void OnAfterDeserialize() {
         if (SteamTranslation == null) SteamTranslation = new SteamTranslationSettings();
         if (AdditionalCategories == null) AdditionalCategories = new List<LocalizationCategory>();
-
-        if (InstrumentEntries != null && InstrumentEntries.Count > 0) {
-            var cat = AdditionalCategories.Find(c => c.CategoryName.Equals("Instruments", StringComparison.OrdinalIgnoreCase));
-            if (cat == null) {
-                cat = new LocalizationCategory("Instruments");
-                AdditionalCategories.Add(cat);
-            }
-            if (cat.Entries == null || cat.Entries.Count == 0) {
-                cat.Entries = new List<LocalizationEntry>(InstrumentEntries);
-            }
-        }
-
-        if (ScaleEntries != null && ScaleEntries.Count > 0) {
-            var cat = AdditionalCategories.Find(c => c.CategoryName.Equals("Scales", StringComparison.OrdinalIgnoreCase));
-            if (cat == null) {
-                cat = new LocalizationCategory("Scales");
-                AdditionalCategories.Add(cat);
-            }
-            if (cat.Entries == null || cat.Entries.Count == 0) {
-                cat.Entries = new List<LocalizationEntry>(ScaleEntries);
-            }
-        }
-
-        if (ItemEntries != null && ItemEntries.Count > 0) {
-            var cat = AdditionalCategories.Find(c => c.CategoryName.Equals("Items", StringComparison.OrdinalIgnoreCase));
-            if (cat == null) {
-                cat = new LocalizationCategory("Items");
-                AdditionalCategories.Add(cat);
-            }
-            if (cat.Entries == null || cat.Entries.Count == 0) {
-                cat.Entries = new List<LocalizationEntry>(ItemEntries);
-            }
-        }
-
-        if (DialogueEntries != null && DialogueEntries.Count > 0) {
-            var cat = AdditionalCategories.Find(c => c.CategoryName.Equals("Dialogue", StringComparison.OrdinalIgnoreCase));
-            if (cat == null) {
-                cat = new LocalizationCategory("Dialogue");
-                AdditionalCategories.Add(cat);
-            }
-            if (cat.Entries == null || cat.Entries.Count == 0) {
-                cat.Entries = new List<LocalizationEntry>(DialogueEntries);
-            }
-        }
     }
 
     public IEnumerable<LocalizationEntry> AllEntries {

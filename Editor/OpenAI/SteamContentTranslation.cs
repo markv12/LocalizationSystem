@@ -10,14 +10,16 @@ public static class SteamContentTranslation {
             .Select(s => (s ?? "").Trim()).Where(s => s.Length > 0).Distinct(StringComparer.Ordinal).ToArray();
     }
 
-    public static string SourceHash(SteamContentCsv document, string source, SteamTranslationSettings settings, string eventNotes) {
-        string[] parts = { source, settings.GameTitle, settings.GameContext, settings.ProtectedNames,
+    public static string SourceHash(SteamContentCsv document, string source, LocalizationMasterDatabase database, string eventNotes) {
+        var settings = database.SteamTranslation;
+        string[] parts = { source, settings.GameTitle, database.GlobalContext, settings.ProtectedNames,
             document.ContentType.ToString(), document.EnglishEventContext(), document.ContentType == SteamContentType.Event ? eventNotes : "" };
         string input = string.Concat(parts.Select(p => (p ?? "").Length + ":" + (p ?? "")));
         using (var hash = SHA256.Create()) return BitConverter.ToString(hash.ComputeHash(Encoding.UTF8.GetBytes(input))).Replace("-", "");
     }
 
-    public static List<OpenAIJson.Request> CreateRequests(SteamContentCsv document, SteamTranslationSettings settings, string eventNotes) {
+    public static List<OpenAIJson.Request> CreateRequests(SteamContentCsv document, LocalizationMasterDatabase database, string eventNotes) {
+        var settings = database.SteamTranslation;
         var targets = (settings.TargetLanguages ?? new List<string>()).Select(SteamContentCsv.NormalizeLanguage).Distinct().ToList();
         if (targets.Count == 0) throw new InvalidOperationException("Select at least one target language under Steam Translation in the master database.");
         foreach (var code in targets) {
@@ -34,7 +36,7 @@ public static class SteamContentTranslation {
                 string language = SteamLanguageList.GetDisplayName(code);
                 string system = $@"You are a professional video game localizer translating Steam {(document.ContentType == SteamContentType.Event ? "event and announcement" : "store page")} content into {language}.
 Game title: {settings.GameTitle}
-Game context: {settings.GameContext}
+Global context: {database.GlobalContext}
 
 Guidelines:
 1. Adapt idioms and phrasing naturally for native {language} readers. Use standard gaming terminology.

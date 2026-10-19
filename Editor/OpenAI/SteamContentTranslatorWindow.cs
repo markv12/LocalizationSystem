@@ -73,7 +73,7 @@ public class SteamContentTranslatorWindow : EditorWindow {
         serialized.Update();
         var settings = serialized.FindProperty("SteamTranslation");
         EditorGUILayout.PropertyField(settings.FindPropertyRelative("GameTitle"));
-        EditorGUILayout.PropertyField(settings.FindPropertyRelative("GameContext"));
+        EditorGUILayout.PropertyField(serialized.FindProperty("GlobalContext"));
         EditorGUILayout.PropertyField(settings.FindPropertyRelative("ProtectedNames"));
         EditorGUILayout.PropertyField(settings.FindPropertyRelative("Model"));
         EditorGUILayout.PropertyField(settings.FindPropertyRelative("Effort"));
@@ -105,12 +105,12 @@ public class SteamContentTranslatorWindow : EditorWindow {
             string sourcePath = Path.GetFullPath(_csvPath);
             var type = _contentType;
             var document = new SteamContentCsv(CSVParser.LoadFromPath(sourcePath), type);
-            var requests = SteamContentTranslation.CreateRequests(document, Settings, _eventNotes);
+            var requests = SteamContentTranslation.CreateRequests(document, _database, _eventNotes);
             if (requests.Count == 0) { _status = "No translations needed for the selected languages."; return; }
             if (requests.Count > 50000) throw new InvalidOperationException("A batch supports at most 50,000 requests.");
             var sources = requests.Select(r => new SubmittedSource {
                 Key = r.CustomId,
-                Hash = SteamContentTranslation.SourceHash(document, document.Entries[r.CustomId.Split('|')[0]]["english"], Settings, _eventNotes)
+                Hash = SteamContentTranslation.SourceHash(document, document.Entries[r.CustomId.Split('|')[0]]["english"], _database, _eventNotes)
             }).ToList();
             var apiKey = OpenAIBatchAPI.GetApiKey();
             if (string.IsNullOrEmpty(apiKey)) throw new InvalidOperationException("OPENAI_API_KEY missing in .env");
@@ -193,7 +193,7 @@ public class SteamContentTranslatorWindow : EditorWindow {
                 }
                 if (_hasDocumentSnapshot && _submittedBatchId == _batchId && !string.IsNullOrEmpty(_batchId)) {
                     var snapshot = _submittedSources.Find(s => s.Key == id);
-                    string hash = SteamContentTranslation.SourceHash(document, source, Settings, _eventNotes);
+                    string hash = SteamContentTranslation.SourceHash(document, source, _database, _eventNotes);
                     if (snapshot == null || snapshot.Hash != hash) {
                         Debug.LogWarning($"[Steam Translation] Skipped stale or unexpected source: {id}.");
                         continue;
