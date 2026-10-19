@@ -38,10 +38,12 @@ public static class SteamTranslationRegression {
     public static void Run() {
         string report = Path.Combine(Path.GetDirectoryName(Application.dataPath), "result.txt");
         try {
-            DatabaseLifecycle(); RoundTrips(); Validation(); RequestsAndSnapshots(); SharedRequests(); MergeResults(); SettingsPersistence();
+            DatabaseLifecycle(); RoundTrips(); StoreTranslationScope(); Validation(); RequestsAndSnapshots(); SharedRequests(); MergeResults(); SettingsPersistence();
             string[] args = Environment.GetCommandLineArgs();
             int fileArg = Array.IndexOf(args, "-steamEventCsv");
             if (fileArg >= 0) RealExport(args[fileArg + 1]);
+            int storeArg = Array.IndexOf(args, "-steamStoreCsv");
+            if (storeArg >= 0) RealStoreExport(args[storeArg + 1]);
             File.WriteAllText(report, $"PASS: {_assertions} assertions using Unity {Application.unityVersion}.\n");
             EditorApplication.Exit(0);
         } catch (Exception e) {
@@ -102,6 +104,61 @@ public static class SteamTranslationRegression {
         Check(store.Export()[2][3] == "retain2", "Store metadata preserved.");
     }
 
+    private static void StoreTranslationScope() {
+        const string about = "app[content][about]";
+        const string summary = "app[content][short_description]";
+        const string os = "app[content][sysreqs][windows][min][osversion]";
+        string csv = "key,language,text\n" + about + ",english,[p]Hello[/p]\n" + about + ",german,[p]Hallo[/p]\n"
+            + about + ",malay,\n" + summary + ",english,Make songs.\n" + summary + ",german,Mache Musik.\n"
+            + summary + ",malay,\n" + os + ",english,Windows 10\n" + os + ",german,\n" + os + ",malay,";
+        var document = new SteamContentCsv(CSVParser.LoadFromString(csv), SteamContentType.StorePage);
+        var database = Database();
+        database.TargetLanguages = new List<string> { "german", "malay", "arabic" };
+        var requests = SteamContentTranslation.CreateRequests(document, database, "");
+        Check(requests.Select(r => r.CustomId).OrderBy(id => id).SequenceEqual(new[] {
+            about + "|malay", summary + "|malay"
+        }.OrderBy(id => id)), "Store translates only missing Malay descriptions and skips Arabic and system requirements.");
+        var withArabic = new SteamContentCsv(CSVParser.LoadFromString(csv + "\n" + about + ",arabic,[p]مرحبا[/p]\n" + summary + ",arabic,"), SteamContentType.StorePage);
+        Check(SteamContentTranslation.CreateRequests(withArabic, database, "").All(r => !r.CustomId.EndsWith("|arabic"))
+            && withArabic.Entries[about]["arabic"] == "[p]مرحبا[/p]", "Existing Arabic rows are preserved, but missing Arabic store fields are skipped.");
+        var window = ScriptableObject.CreateInstance<SteamContentTranslatorWindow>();
+        Set(window, "_database", database);
+        Set(window, "_contentType", SteamContentType.StorePage);
+        string fixture = Path.Combine(Path.GetDirectoryName(Application.dataPath), "store-preview.csv");
+        File.WriteAllText(fixture, csv);
+        Set(window, "_csvPath", fixture);
+        var preview = typeof(SteamContentTranslatorWindow).GetMethod("RefreshPreview", BindingFlags.Instance | BindingFlags.NonPublic);
+        preview.Invoke(window, null);
+        Check((int)Get(window, "_previewRequestCount") == 2 && ((string)Get(window, "_previewSummary")).Contains("Bahasa Melayu: 2")
+            && !((string)Get(window, "_previewSummary")).Contains("العربية"),
+            "Preview reports the actual request count by language.");
+        database.TargetLanguages = new List<string> { "german" };
+        preview.Invoke(window, null);
+        Check((int)Get(window, "_previewRequestCount") == 0, "Preview updates when selected languages change.");
+        database.TargetLanguages = new List<string> { "german", "malay", "arabic" };
+        var merge = typeof(SteamContentTranslatorWindow).GetMethod("MergeResults", BindingFlags.Instance | BindingFlags.NonPublic);
+        string oldBatch = Result(os + "|malay", "Windows 10") + "\n" + Result(about + "|arabic", "[p]مرحبا[/p]") + "\n"
+            + Result(about + "|german", "[p]Changed[/p]") + "\n" + Result(about + "|malay", "[p]Helo[/p]") + "\n"
+            + Result(summary + "|malay", "Cipta lagu.") + "\n" + Result(summary + "|arabic", "اصنع الأغاني.");
+        Check((int)merge.Invoke(window, new object[] { document, oldBatch }) == 2, "Existing batch imports only the Malay descriptions.");
+        Check(document.Entries[os]["malay"] == "" && document.Entries[os]["german"] == "", "Old batch cannot fill system requirements.");
+        Check(!document.Entries[about].ContainsKey("arabic") && document.Entries[about]["german"] == "[p]Hallo[/p]", "Arabic store results are ignored and existing translations remain untouched.");
+        Check(document.Export().All(row => row[1] != "arabic"), "Export does not add Arabic store rows.");
+        File.WriteAllText(fixture, CSVParser.WriteToString(document.Export()));
+        File.SetLastWriteTimeUtc(fixture, DateTime.UtcNow.AddSeconds(2));
+        preview.Invoke(window, null);
+        Check((int)Get(window, "_previewRequestCount") == 0, "Preview refreshes after the source file changes.");
+        Check(database.TargetLanguages.Contains("arabic"), "Store filtering does not modify the shared game-language selection.");
+        var eventDocument = Event("field,language,value\ntitle,english,Hello\ntitle,arabic,");
+        Check(SteamContentTranslation.CreateRequests(eventDocument, database, "").Any(r => r.CustomId.EndsWith("|arabic")), "Arabic event handling remains available.");
+        var arabicEntry = new LocalizationEntry { Key = "arabic.greeting", EnglishText = "Hello" };
+        arabicEntry.Translations.Add(new LanguageTranslation { LanguageCode = "arabic", Status = TranslationStatus.Untranslated });
+        database.Entries.Add(arabicEntry);
+        Check(BatchHandler.BuildRequests(database, database.TargetLanguages, out _).Any(r => r.CustomId.StartsWith("arabic|")), "Arabic in-game translation remains available.");
+        UnityEngine.Object.DestroyImmediate(window);
+        UnityEngine.Object.DestroyImmediate(database);
+    }
+
     private static void Validation() {
         Reject(() => Event("field,english,german\ntitle,Hello,"), "Reject other event layout.");
         Reject(() => Event("field,language,value\ntitle,english,Hi\ntitle,korean,\ntitle,koreana,"), "Reject alias duplicates.");
@@ -150,7 +207,7 @@ public static class SteamTranslationRegression {
         current = SteamContentTranslation.SourceHash(document, "Release!", database, "notes");
         database.GameTone = "Updated tone";
         Check(current != SteamContentTranslation.SourceHash(document, "Release!", database, "notes"), "Tone affects snapshot.");
-        var store = new SteamContentCsv(CSVParser.LoadFromString("key,language,text\na,english,Hello"), SteamContentType.StorePage);
+        var store = new SteamContentCsv(CSVParser.LoadFromString("key,language,text\na,english,Hello\na,german,"), SteamContentType.StorePage);
         Check(SteamContentTranslation.SourceHash(store, "Hello", database, "a") == SteamContentTranslation.SourceHash(store, "Hello", database, "b"), "Store ignores notes.");
         var storeRequest = SteamContentTranslation.CreateRequests(store, database, "").First();
         Check(OpenAIJson.ReadObject<RequestView>(storeRequest.Json).body.messages[0].content.Contains(database.GlobalContext), "Store prompt uses shared Global Context.");
@@ -300,6 +357,24 @@ public static class SteamTranslationRegression {
         Check(document.TryAddTranslation("body", "german", source.Replace("Hey everyone!", "Hallo zusammen!"), out _), "Real BBCode and images preserved.");
         string exported = CSVParser.WriteToString(document.Export());
         Check(Event(exported).Entries["body"]["german"].Contains("Hallo zusammen!"), "Real translated body round-trips.");
+        UnityEngine.Object.DestroyImmediate(database);
+    }
+
+    private static void RealStoreExport(string path) {
+        var rows = CSVParser.LoadFromPath(path);
+        var document = new SteamContentCsv(rows, SteamContentType.StorePage);
+        var database = Database();
+        database.TargetLanguages = SteamLanguageList.All.Where(l => l.langCode != "english").Select(l => l.langCode).ToList();
+        int originalCount = document.Entries.Values.Where(l => l.TryGetValue("english", out var source) && !string.IsNullOrWhiteSpace(source))
+            .Sum(l => database.TargetLanguages.Count(code => !l.TryGetValue(code, out var text) || string.IsNullOrWhiteSpace(text)));
+        Check(originalCount == 94, "Reproduce the reported 94 requests with the previous all-fields/all-languages behavior.");
+        var requests = SteamContentTranslation.CreateRequests(document, database, "");
+        Check(requests.Count == 2 && requests.All(r => r.CustomId.EndsWith("|malay")),
+            "Actual store export produces only two Malay requests, even with Arabic selected.");
+        Check(requests.All(r => r.CustomId.StartsWith("app[content][about]|") || r.CustomId.StartsWith("app[content][short_description]|")),
+            "Actual store requests cover only about and short description.");
+        Check(database.TargetLanguages.Contains("arabic"), "Arabic is still selected for in-game translations.");
+        Check(CSVParser.WriteToString(document.Export()) == CSVParser.WriteToString(rows), "Store source rows and existing translations remain unchanged.");
         UnityEngine.Object.DestroyImmediate(database);
     }
 }

@@ -20,6 +20,9 @@ public class SteamContentTranslatorWindow : EditorWindow {
     private string _status = "Ready";
     private bool _isProcessing;
     private Vector2 _scroll;
+    private string _previewKey;
+    private string _previewSummary = "";
+    private int _previewRequestCount = -1;
 
     [Serializable]
     private class SubmittedSource {
@@ -58,7 +61,7 @@ public class SteamContentTranslatorWindow : EditorWindow {
         _contentType = (SteamContentType)EditorGUILayout.EnumPopup("Content Type", _contentType);
         EditorGUILayout.HelpBox(_contentType == SteamContentType.Event
             ? "Use Steam's event CSV export with field, language, value columns."
-            : "Use Steam's store page CSV export with key, language, text columns.", MessageType.Info);
+            : "Use Steam's store page CSV export with key, language, text columns. System requirements and Arabic store descriptions are skipped. Other selected languages are translated even when missing from the export.", MessageType.Info);
         EditorGUILayout.BeginHorizontal();
         string path = EditorGUILayout.TextField("CSV Path", _csvPath);
         if (GUILayout.Button("Browse", GUILayout.Width(60))) {
@@ -89,11 +92,42 @@ public class SteamContentTranslatorWindow : EditorWindow {
         _batchId = EditorGUILayout.TextField("Batch ID", _batchId);
         if (!string.IsNullOrEmpty(_batchId) && (_submittedBatchId != _batchId || !_hasDocumentSnapshot))
             EditorGUILayout.HelpBox("This batch has no saved submission snapshot. Source changes and original target requests cannot be verified.", MessageType.Warning);
+        RefreshPreview();
+        if (!string.IsNullOrEmpty(_previewSummary))
+            EditorGUILayout.HelpBox(_previewSummary, _previewRequestCount < 0 ? MessageType.Error : MessageType.Info);
         using (new EditorGUI.DisabledScope(string.IsNullOrWhiteSpace(_csvPath))) {
-            if (GUILayout.Button("Submit Batch")) SubmitBatch();
+            using (new EditorGUI.DisabledScope(_previewRequestCount <= 0)) {
+                if (GUILayout.Button("Submit Batch")) SubmitBatch();
+            }
             using (new EditorGUI.DisabledScope(string.IsNullOrWhiteSpace(_batchId))) {
                 if (GUILayout.Button("Check/Process Batch")) CheckAndProcessBatch();
             }
+        }
+    }
+
+    private void RefreshPreview() {
+        if (string.IsNullOrWhiteSpace(_csvPath)) {
+            _previewKey = null;
+            _previewSummary = "";
+            _previewRequestCount = -1;
+            return;
+        }
+        try {
+            var file = new FileInfo(_csvPath);
+            if (!file.Exists) throw new FileNotFoundException("CSV file not found.");
+            string key = file.FullName + "|" + _contentType + "|" + file.LastWriteTimeUtc.Ticks + "|" + file.Length + "|"
+                + string.Join(",", _database.TargetLanguages ?? new List<string>());
+            if (_previewKey == key) return;
+            _previewKey = key;
+            var document = new SteamContentCsv(CSVParser.LoadFromPath(file.FullName), _contentType);
+            var pending = SteamContentTranslation.GetPendingTranslations(document, _database);
+            _previewRequestCount = pending.Count;
+            _previewSummary = pending.Count == 0 ? "No translations needed for the selected languages."
+                : $"{pending.Count} translation requests:\n" + string.Join("\n", pending.GroupBy(p => p.Language)
+                    .Select(group => SteamLanguageList.GetDisplayName(group.Key) + ": " + group.Count()));
+        } catch (Exception e) {
+            _previewRequestCount = -1;
+            _previewSummary = e.Message;
         }
     }
 
@@ -178,6 +212,8 @@ public class SteamContentTranslatorWindow : EditorWindow {
 
     private int MergeResults(SteamContentCsv document, string jsonContent) {
         int imported = 0;
+        var allowed = new HashSet<string>(SteamContentTranslation.GetPendingTranslations(document, _database)
+            .Select(item => item.Key + "|" + item.Language), StringComparer.Ordinal);
         foreach (string line in jsonContent.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)) {
             try {
                 var result = OpenAIJson.ReadBatchResult(line);
@@ -189,6 +225,10 @@ public class SteamContentTranslatorWindow : EditorWindow {
                 string[] parts = (id ?? "").Split('|');
                 if (parts.Length != 2 || !document.Entries.TryGetValue(parts[0], out var languages) || !languages.TryGetValue("english", out string source)) {
                     Debug.LogWarning($"[Steam Translation] Unexpected result ID: {id}.");
+                    continue;
+                }
+                if (!allowed.Contains(parts[0] + "|" + SteamContentCsv.NormalizeLanguage(parts[1]))) {
+                    Debug.LogWarning($"[Steam Translation] Skipped {id}: field/language is outside the CSV translation scope or already translated.");
                     continue;
                 }
                 if (_hasDocumentSnapshot && _submittedBatchId == _batchId && !string.IsNullOrEmpty(_batchId)) {

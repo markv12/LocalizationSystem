@@ -1,6 +1,7 @@
 param(
     [string]$UnityEditorPath = 'C:/Program Files/Unity/Hub/Editor/6000.6.5f1/Editor/Unity.exe',
-    [string]$EventCsvPath = ''
+    [string]$EventCsvPath = '',
+    [string]$StoreCsvPath = ''
 )
 $ErrorActionPreference = 'Stop'
 if (!(Test-Path -LiteralPath $UnityEditorPath)) { throw "Unity editor not found: $UnityEditorPath" }
@@ -33,6 +34,7 @@ if (Test-Path -LiteralPath $report) { Remove-Item -LiteralPath $report }
 $log = Join-Path $projectPath 'regression.log'
 $arguments = "-batchmode -nographics -projectPath `"$projectPath`" -executeMethod SteamTranslationRegression.Run -logFile `"$log`""
 if ($EventCsvPath) { $arguments += " -steamEventCsv `"$EventCsvPath`"" }
+if ($StoreCsvPath) { $arguments += " -steamStoreCsv `"$StoreCsvPath`"" }
 $process = Start-Process -FilePath $UnityEditorPath -ArgumentList $arguments -WindowStyle Hidden -PassThru -Wait
 if (Test-Path -LiteralPath $report) { Get-Content -LiteralPath $report }
 if ($process.ExitCode -ne 0 -or !(Test-Path -LiteralPath $report)) {
