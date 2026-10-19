@@ -5,28 +5,21 @@ using System.Security.Cryptography;
 using System.Text;
 
 public static class SteamContentTranslation {
-    public static string[] ProtectedNames(SteamTranslationSettings settings) {
-        return new[] { settings.GameTitle }.Concat((settings.ProtectedNames ?? "").Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
-            .Select(s => (s ?? "").Trim()).Where(s => s.Length > 0).Distinct(StringComparer.Ordinal).ToArray();
-    }
-
     public static string SourceHash(SteamContentCsv document, string source, LocalizationMasterDatabase database, string eventNotes) {
-        var settings = database.SteamTranslation;
-        string[] parts = { source, settings.GameTitle, database.GlobalContext, settings.ProtectedNames,
+        string[] parts = { source, database.GameTitle, database.GameGenre, database.GameTone, database.GlobalContext, database.ProtectedNames,
             document.ContentType.ToString(), document.EnglishEventContext(), document.ContentType == SteamContentType.Event ? eventNotes : "" };
         string input = string.Concat(parts.Select(p => (p ?? "").Length + ":" + (p ?? "")));
         using (var hash = SHA256.Create()) return BitConverter.ToString(hash.ComputeHash(Encoding.UTF8.GetBytes(input))).Replace("-", "");
     }
 
     public static List<OpenAIJson.Request> CreateRequests(SteamContentCsv document, LocalizationMasterDatabase database, string eventNotes) {
-        var settings = database.SteamTranslation;
-        var targets = (settings.TargetLanguages ?? new List<string>()).Select(SteamContentCsv.NormalizeLanguage).Distinct().ToList();
-        if (targets.Count == 0) throw new InvalidOperationException("Select at least one target language under Steam Translation in the master database.");
+        var targets = (database.TargetLanguages ?? new List<string>()).Select(SteamContentCsv.NormalizeLanguage).Distinct().ToList();
+        if (targets.Count == 0) throw new InvalidOperationException("Select at least one target language in the master database.");
         foreach (var code in targets) {
             if (code == "english" || !SteamLanguageList.All.Any(l => l.langCode == code))
                 throw new InvalidOperationException($"Invalid target language '{code}'. Select non-English languages from the language picker.");
         }
-        string names = string.Join("\n", ProtectedNames(settings).Select(n => "- " + n));
+        string names = string.Join("\n", database.GetProtectedNames().Select(n => "- " + n));
         string eventContext = document.EventPromptContext();
         var requests = new List<OpenAIJson.Request>();
         foreach (var entry in document.Entries) {
@@ -35,7 +28,9 @@ public static class SteamContentTranslation {
                 if (entry.Value.TryGetValue(code, out string existing) && !string.IsNullOrWhiteSpace(existing)) continue;
                 string language = SteamLanguageList.GetDisplayName(code);
                 string system = $@"You are a professional video game localizer translating Steam {(document.ContentType == SteamContentType.Event ? "event and announcement" : "store page")} content into {language}.
-Game title: {settings.GameTitle}
+Game title: {database.GameTitle}
+Game genre: {database.GameGenre}
+Project tone: {database.GameTone}
 Global context: {database.GlobalContext}
 
 Guidelines:
@@ -49,30 +44,11 @@ Guidelines:
                 string user = document.ContentType == SteamContentType.Event
                     ? $"Event notes (translation guidance):\n{eventNotes}\n\nFull English event (reference only; keep terminology consistent):\n{eventContext}\n\nTranslate only the '{entry.Key}' field into {language}:\n\n{source}"
                     : $"Translate the '{entry.Key}' field into {language}:\n\n{source}";
-                requests.Add(OpenAITranslationModels.CreateRequest(entry.Key + "|" + code, settings.Model, settings.Effort,
-                    system, user, maxCompletionTokens: settings.OutputTokenBudget));
+                requests.Add(OpenAITranslationModels.CreateRequest(entry.Key + "|" + code, database.OpenAIModel, database.Effort,
+                    system, user, maxCompletionTokens: database.MaxCompletionTokens));
             }
         }
         return requests;
     }
 
-    public static bool PreservesNames(string source, string translation, SteamTranslationSettings settings, out string error) {
-        foreach (string name in ProtectedNames(settings)) {
-            if (Count(source, name) != Count(translation, name)) {
-                error = $"Changed protected name '{name}'.";
-                return false;
-            }
-        }
-        error = null;
-        return true;
-    }
-
-    private static int Count(string text, string name) {
-        int count = 0, start = 0, index;
-        while ((index = (text ?? "").IndexOf(name, start, StringComparison.Ordinal)) >= 0) {
-            count++;
-            start = index + name.Length;
-        }
-        return count;
-    }
 }

@@ -7,8 +7,11 @@ using System.Reflection;
 using UnityEditor;
 using UnityEngine;
 
-// Only the runtime fallback constant is needed in this isolated editor project.
-public static class Localizer { public const string DEFAULT_LANGUAGE = "english"; }
+// Only the runtime resource constants are needed in this isolated editor project.
+public static class Localizer {
+    public const string DEFAULT_LANGUAGE = "english";
+    public const string LANGUAGE_LIST_KEY = "LanguageList";
+}
 
 public static class SteamTranslationRegression {
     private static int _assertions;
@@ -21,25 +24,21 @@ public static class SteamTranslationRegression {
         throw new Exception(message);
     }
     private static SteamContentCsv Event(string csv) => new SteamContentCsv(CSVParser.LoadFromString(csv), SteamContentType.Event);
-    private static SteamTranslationSettings Settings() {
-        var settings = new SteamTranslationSettings();
-        settings.GameTitle = "10 Second Mixtape";
-        settings.ProtectedNames = "Different Strokes\nDifferent Folks";
-        settings.TargetLanguages = new List<string> { "german", "korean" };
-        return settings;
-    }
-
     private static LocalizationMasterDatabase Database() {
         var database = ScriptableObject.CreateInstance<LocalizationMasterDatabase>();
+        database.GameTitle = "10 Second Mixtape";
+        database.GameGenre = "Music creation";
+        database.GameTone = "Friendly and playful";
         database.GlobalContext = "A cooperative music game.";
-        database.SteamTranslation = Settings();
+        database.ProtectedNames = "Different Strokes\nDifferent Folks";
+        database.TargetLanguages = new List<string> { "german", "koreana" };
         return database;
     }
 
     public static void Run() {
         string report = Path.Combine(Path.GetDirectoryName(Application.dataPath), "result.txt");
         try {
-            DatabaseLifecycle(); RoundTrips(); Validation(); RequestsAndSnapshots(); MergeResults(); SettingsPersistence();
+            DatabaseLifecycle(); RoundTrips(); Validation(); RequestsAndSnapshots(); SharedRequests(); MergeResults(); SettingsPersistence();
             string[] args = Environment.GetCommandLineArgs();
             int fileArg = Array.IndexOf(args, "-steamEventCsv");
             if (fileArg >= 0) RealExport(args[fileArg + 1]);
@@ -59,8 +58,8 @@ public static class SteamTranslationRegression {
         Check(Directory.GetFiles(Application.dataPath, "*.asset", SearchOption.AllDirectories).Length == 0, "Window does not create settings assets.");
         UnityEngine.Object.DestroyImmediate(window);
         var database = ScriptableObject.CreateInstance<LocalizationMasterDatabase>();
-        Check(database.SteamTranslation.Model == "gpt-6.1-sol" && database.SteamTranslation.Effort == ReasoningEffort.Medium, "Steam defaults initialized inside database.");
-        Check(database.SteamTranslation.TargetLanguages.Count == SteamLanguageList.All.Count - 1, "Steam target defaults initialized.");
+        Check(database.OpenAIModel == OpenAITranslationModels.DefaultModel && database.Effort == ReasoningEffort.Low, "Shared model defaults initialized.");
+        Check(database.TargetLanguages.Count == 0, "Shared languages require explicit selection.");
         AssetDatabase.CreateAsset(database, "Assets/LocalizationMasterDatabase.asset");
         AssetDatabase.SaveAssetIfDirty(database);
         window = ScriptableObject.CreateInstance<SteamContentTranslatorWindow>();
@@ -117,14 +116,15 @@ public static class SteamTranslationRegression {
         Check(!SteamContentCsv.PreservesFormatting("Go https://example.com/a", "Gehe https://example.com/b", out _), "Reject URL changes.");
         Check(!SteamContentCsv.PreservesFormatting("Hello {player}", "Hallo {spieler}", out _), "Reject changed placeholders.");
         Check(SteamContentCsv.PreservesFormatting("Visit https://example.com/a {player}", "Besuche https://example.com/a {player}", out _), "Accept preserved URL and placeholder.");
-        Check(!SteamContentTranslation.PreservesNames("Different Strokes", "Andere Striche", Settings(), out _), "Reject changed name.");
-        Check(SteamContentTranslation.PreservesNames("Play 10 Second Mixtape", "Spiele 10 Second Mixtape", Settings(), out _), "Preserve title automatically.");
+        var database = Database();
+        Check(!database.PreservesProtectedNames("Different Strokes", "Andere Striche", out _), "Reject changed name.");
+        Check(database.PreservesProtectedNames("Play 10 Second Mixtape", "Spiele 10 Second Mixtape", out _), "Preserve title automatically.");
+        UnityEngine.Object.DestroyImmediate(database);
     }
 
     private static void RequestsAndSnapshots() {
         var document = Event("field,language,value\ntitle,english,Release!\nbody,english,[p]Hello[/p]\nsubtitle,english,\nsummary,english,\ntitle,german,Fertig");
         var database = Database();
-        var settings = database.SteamTranslation;
         var requests = SteamContentTranslation.CreateRequests(document, database, "Keep the playful tone.");
         Check(requests.Count == 3, "Skip empty fields and existing translations.");
         Check(requests.Any(r => r.CustomId == "title|koreana"), "Canonical request language.");
@@ -142,20 +142,79 @@ public static class SteamTranslationRegression {
         document.Entries["body"]["english"] = "Updated event body";
         Check(hash != SteamContentTranslation.SourceHash(document, "Release!", database, "notes"), "Other fields affect snapshot.");
         string current = SteamContentTranslation.SourceHash(document, "Release!", database, "notes");
-        settings.ProtectedNames += "\nAnother Name";
+        database.ProtectedNames += "\nAnother Name";
         Check(current != SteamContentTranslation.SourceHash(document, "Release!", database, "notes"), "Names affect snapshot.");
+        current = SteamContentTranslation.SourceHash(document, "Release!", database, "notes");
+        database.GameGenre = "Updated genre";
+        Check(current != SteamContentTranslation.SourceHash(document, "Release!", database, "notes"), "Genre affects snapshot.");
+        current = SteamContentTranslation.SourceHash(document, "Release!", database, "notes");
+        database.GameTone = "Updated tone";
+        Check(current != SteamContentTranslation.SourceHash(document, "Release!", database, "notes"), "Tone affects snapshot.");
         var store = new SteamContentCsv(CSVParser.LoadFromString("key,language,text\na,english,Hello"), SteamContentType.StorePage);
         Check(SteamContentTranslation.SourceHash(store, "Hello", database, "a") == SteamContentTranslation.SourceHash(store, "Hello", database, "b"), "Store ignores notes.");
         var storeRequest = SteamContentTranslation.CreateRequests(store, database, "").First();
         Check(OpenAIJson.ReadObject<RequestView>(storeRequest.Json).body.messages[0].content.Contains(database.GlobalContext), "Store prompt uses shared Global Context.");
-        settings.TargetLanguages.Clear();
+        database.TargetLanguages.Clear();
         try { SteamContentTranslation.CreateRequests(document, database, ""); throw new Exception("Empty targets accepted."); }
         catch (InvalidOperationException) { _assertions++; }
         UnityEngine.Object.DestroyImmediate(database);
     }
 
+    private static void SharedRequests() {
+        var database = Database();
+        database.OpenAIModel = "gpt-6-sol";
+        database.Effort = ReasoningEffort.High;
+        database.MaxCompletionTokens = 12345;
+        database.TargetLanguages = new List<string> { "german", "japanese" };
+        string source = "Play 10 Second Mixtape by Different Folks.";
+        var entry = new LocalizationEntry { Key = "shared.greeting", EnglishText = source };
+        foreach (string language in database.TargetLanguages)
+            entry.Translations.Add(new LanguageTranslation { LanguageCode = language, Status = TranslationStatus.Untranslated });
+        database.Entries.Add(entry);
+        var document = Event("field,language,value\ntitle,english,Release!\nbody,english,Hello");
+        var steam = SteamContentTranslation.CreateRequests(document, database, "");
+        var regular = BatchHandler.BuildRequests(database, database.TargetLanguages, out var pending);
+        Check(steam.Count == 4 && regular.Count == 2 && pending.Count == 2, "Both workflows use shared target languages.");
+        foreach (var request in new[] { steam.First(), regular.First() }) {
+            var body = OpenAIJson.ReadObject<RequestView>(request.Json).body;
+            Check(body.model == database.OpenAIModel && body.reasoning_effort == "high" && body.max_completion_tokens == 12345,
+                "Both workflows use the shared model, effort, and output budget.");
+            string prompt = body.messages[0].content;
+            Check(new[] { database.GameTitle, database.GameGenre, database.GameTone, database.GlobalContext, "Different Folks" }.All(prompt.Contains),
+                "Both prompts use the shared game guidance and protected names.");
+        }
+
+        var german = entry.GetTranslation("german");
+        german.Status = TranslationStatus.OutForBatch;
+        german.SetBatchTracking("shared-batch", regular.First().CustomId, LocalizationProcessor.GenerateHash(entry.EnglishText, entry.Context));
+        var apply = typeof(BatchHandler).GetMethod("ApplyResultsToDatabase", BindingFlags.Static | BindingFlags.NonPublic);
+        string badText = JsonUtility.ToJson(new OpenAIJson.Translations { translations = new[] {
+            new OpenAIJson.Translation { key = entry.Key, text = "Spiele 10 Second Mixtape von Andere Leute." }
+        } });
+        apply.Invoke(null, new object[] { database, Result(regular.First().CustomId, badText), "shared-batch" });
+        Check(german.Status == TranslationStatus.OutForBatch, "Regular translations reject changed shared protected names.");
+        string goodText = JsonUtility.ToJson(new OpenAIJson.Translations { translations = new[] {
+            new OpenAIJson.Translation { key = entry.Key, text = "Spiele 10 Second Mixtape von Different Folks." }
+        } });
+        apply.Invoke(null, new object[] { database, Result(regular.First().CustomId, goodText), "shared-batch" });
+        Check(german.Status == TranslationStatus.Translated && german.TranslatedText.Contains("Different Folks"),
+            "Regular translations accept preserved shared protected names.");
+
+        database.TargetLanguages = new List<string> { "japanese" };
+        Check(SteamContentTranslation.CreateRequests(document, database, "").All(r => r.CustomId.EndsWith("|japanese")),
+            "Steam immediately follows shared language edits.");
+        var remaining = BatchHandler.BuildRequests(database, database.TargetLanguages, out _);
+        Check(remaining.Count == 1 && remaining[0].CustomId.StartsWith("japanese|"), "Regular translation follows the same language edits.");
+        UnityEngine.Object.DestroyImmediate(database);
+    }
+
     [Serializable] private class RequestView { public BodyView body; }
-    [Serializable] private class BodyView { public OpenAIJson.Message[] messages; }
+    [Serializable] private class BodyView {
+        public string model;
+        public string reasoning_effort;
+        public int max_completion_tokens;
+        public OpenAIJson.Message[] messages;
+    }
     private static string Result(string id, string text, string finish = "stop") {
         // Match the API's omitted error fields; JsonUtility serializes null DTOs as empty objects.
         return "{\"custom_id\":\"" + id + "\",\"response\":{\"status_code\":200,\"body\":{\"choices\":[{\"finish_reason\":\""
@@ -196,17 +255,15 @@ public static class SteamTranslationRegression {
         var database = LocalizationMasterDatabase.LoadDatabase();
         database.GlobalContext = "Existing game context";
         database.Entries.Add(new LocalizationEntry { Key = "retained", EnglishText = "Existing string" });
-        string originalModel = database.OpenAIModel;
         var serialized = new SerializedObject(database);
         serialized.Update();
         serialized.FindProperty("GlobalContext").stringValue = "Saved shared context";
-        var settings = serialized.FindProperty("SteamTranslation");
-        settings.FindPropertyRelative("GameTitle").stringValue = "Saved Game";
-        settings.FindPropertyRelative("ProtectedNames").stringValue = "Saved Name";
-        settings.FindPropertyRelative("Model").stringValue = "gpt-4o";
-        settings.FindPropertyRelative("Effort").intValue = (int)ReasoningEffort.High;
-        settings.FindPropertyRelative("OutputTokenBudget").intValue = 8192;
-        var languages = settings.FindPropertyRelative("TargetLanguages");
+        serialized.FindProperty("GameTitle").stringValue = "Saved Game";
+        serialized.FindProperty("ProtectedNames").stringValue = "Saved Name";
+        serialized.FindProperty("OpenAIModel").stringValue = "gpt-6-sol";
+        serialized.FindProperty("Effort").intValue = (int)ReasoningEffort.High;
+        serialized.FindProperty("MaxCompletionTokens").intValue = 8192;
+        var languages = serialized.FindProperty("TargetLanguages");
         languages.arraySize = 1;
         languages.GetArrayElementAtIndex(0).stringValue = "japanese";
         serialized.ApplyModifiedProperties();
@@ -216,16 +273,14 @@ public static class SteamTranslationRegression {
         LocalizationMasterDatabase.ClearCachedDatabase();
         var reopened = ScriptableObject.CreateInstance<SteamContentTranslatorWindow>();
         var reloaded = (LocalizationMasterDatabase)Get(reopened, "_database");
-        var restored = reloaded.SteamTranslation;
-        Check(restored.GameTitle == "Saved Game" && reloaded.GlobalContext == "Saved shared context", "Restore title and shared Global Context in new window.");
-        Check(restored.ProtectedNames == "Saved Name" && restored.TargetLanguages.SequenceEqual(new[] { "japanese" }), "Restore other defaults.");
-        Check(restored.Model == "gpt-4o" && restored.Effort == ReasoningEffort.High && restored.OutputTokenBudget == 8192, "Restore Steam model controls.");
-        Check(File.ReadAllText(Path.GetFullPath(path)).Contains("Saved Game"), "Steam settings saved in database on disk.");
-        Check(reloaded.OpenAIModel == originalModel && reloaded.TargetLanguages.Count == 0, "In-game model and languages preserved independently.");
+        Check(reloaded.GameTitle == "Saved Game" && reloaded.GlobalContext == "Saved shared context", "Restore shared title and context in new window.");
+        Check(reloaded.ProtectedNames == "Saved Name" && reloaded.TargetLanguages.SequenceEqual(new[] { "japanese" }), "Restore shared names and target languages.");
+        Check(reloaded.OpenAIModel == "gpt-6-sol" && reloaded.Effort == ReasoningEffort.High && reloaded.MaxCompletionTokens == 8192, "Restore shared model controls.");
+        Check(File.ReadAllText(Path.GetFullPath(path)).Contains("Saved Game"), "Shared settings saved in database on disk.");
         Check(reloaded.FindEntry("retained")?.EnglishText == "Existing string", "Localization entries preserved.");
         var decoded = ScriptableObject.CreateInstance<LocalizationMasterDatabase>();
         EditorJsonUtility.FromJsonOverwrite(EditorJsonUtility.ToJson(reloaded), decoded);
-        Check(decoded.SteamTranslation.GameTitle == "Saved Game" && decoded.SteamTranslation.TargetLanguages.Single() == "japanese", "Database serialization includes nested settings.");
+        Check(decoded.GameTitle == "Saved Game" && decoded.TargetLanguages.Single() == "japanese", "Database serialization includes shared settings.");
         Check(Directory.GetFiles(Application.dataPath, "*.asset", SearchOption.AllDirectories).Length == 1, "No separate Steam settings asset created.");
         UnityEngine.Object.DestroyImmediate(decoded);
         UnityEngine.Object.DestroyImmediate(reopened);
@@ -237,10 +292,9 @@ public static class SteamTranslationRegression {
         Check(document.Entries.Count == 4, "Real event has four fields.");
         Check(CSVParser.WriteToString(document.Export()) == CSVParser.WriteToString(rows), "Real export round-trips unchanged.");
         var database = Database();
-        var settings = database.SteamTranslation;
-        settings.TargetLanguages = SteamLanguageList.All.Where(l => l.langCode != "english").Select(l => l.langCode).ToList();
+        database.TargetLanguages = SteamLanguageList.All.Where(l => l.langCode != "english").Select(l => l.langCode).ToList();
         var requests = SteamContentTranslation.CreateRequests(document, database, "");
-        Check(requests.Count == 2 * settings.TargetLanguages.Count, "Real event generates two populated fields per target language.");
+        Check(requests.Count == 2 * database.TargetLanguages.Count, "Real event generates two populated fields per target language.");
         Check(requests.All(r => r.CustomId.StartsWith("body|") || r.CustomId.StartsWith("title|")), "Empty subtitle/summary stay empty.");
         string source = document.Entries["body"]["english"];
         Check(document.TryAddTranslation("body", "german", source.Replace("Hey everyone!", "Hallo zusammen!"), out _), "Real BBCode and images preserved.");

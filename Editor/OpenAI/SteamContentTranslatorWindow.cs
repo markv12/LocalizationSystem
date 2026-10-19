@@ -20,7 +20,6 @@ public class SteamContentTranslatorWindow : EditorWindow {
     private string _status = "Ready";
     private bool _isProcessing;
     private Vector2 _scroll;
-    private SteamTranslationSettings Settings => _database.SteamTranslation;
 
     [Serializable]
     private class SubmittedSource {
@@ -71,14 +70,15 @@ public class SteamContentTranslatorWindow : EditorWindow {
 
         var serialized = new SerializedObject(_database);
         serialized.Update();
-        var settings = serialized.FindProperty("SteamTranslation");
-        EditorGUILayout.PropertyField(settings.FindPropertyRelative("GameTitle"));
+        EditorGUILayout.PropertyField(serialized.FindProperty("GameTitle"));
+        EditorGUILayout.PropertyField(serialized.FindProperty("GameGenre"));
+        EditorGUILayout.PropertyField(serialized.FindProperty("GameTone"));
         EditorGUILayout.PropertyField(serialized.FindProperty("GlobalContext"));
-        EditorGUILayout.PropertyField(settings.FindPropertyRelative("ProtectedNames"));
-        EditorGUILayout.PropertyField(settings.FindPropertyRelative("Model"));
-        EditorGUILayout.PropertyField(settings.FindPropertyRelative("Effort"));
-        EditorGUILayout.PropertyField(settings.FindPropertyRelative("OutputTokenBudget"));
-        EditorGUILayout.PropertyField(settings.FindPropertyRelative("TargetLanguages"), true);
+        EditorGUILayout.PropertyField(serialized.FindProperty("ProtectedNames"));
+        EditorGUILayout.PropertyField(serialized.FindProperty("OpenAIModel"));
+        EditorGUILayout.PropertyField(serialized.FindProperty("Effort"));
+        EditorGUILayout.PropertyField(serialized.FindProperty("MaxCompletionTokens"));
+        EditorGUILayout.PropertyField(serialized.FindProperty("TargetLanguages"), true);
         serialized.ApplyModifiedProperties();
         AssetDatabase.SaveAssetIfDirty(_database);
         if (_contentType == SteamContentType.Event) {
@@ -199,7 +199,7 @@ public class SteamContentTranslatorWindow : EditorWindow {
                         continue;
                     }
                 }
-                if (!SteamContentTranslation.PreservesNames(source, translation, Settings, out error) ||
+                if (!_database.PreservesProtectedNames(source, translation, out error) ||
                     !document.TryAddTranslation(parts[0], parts[1], translation, out error)) {
                     Debug.LogWarning($"[Steam Translation] Skipped {id}: {error}");
                     continue;

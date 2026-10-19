@@ -216,6 +216,10 @@ public static class BatchHandler {
                             Debug.LogWarning($"[Localization] Skipped {key}: translation changed formatting placeholders.");
                             continue;
                         }
+                        if (!database.PreservesProtectedNames(entry.EnglishText, text, out string nameError)) {
+                            Debug.LogWarning($"[Localization] Skipped {key}: {nameError}");
+                            continue;
+                        }
                         translation.TranslatedText = text;
                         translation.Status = TranslationStatus.Translated;
                         translation.SourceHash = sourceHash;
@@ -249,9 +253,12 @@ public static class BatchHandler {
     public static string ConstructSystemPrompt(LocalizationMasterDatabase database, string language) {
         var sb = new StringBuilder();
         sb.AppendLine($"You are an expert video game localizer specializing in the {language} market.");
+        sb.AppendLine($"Game Title: {database.GameTitle}");
         sb.AppendLine($"Game Genre: {database.GameGenre}");
         sb.AppendLine($"Project Tone: {database.GameTone}");
         sb.AppendLine($"Global Game Context: {database.GlobalContext}");
+        sb.AppendLine("Preserve the following names exactly wherever they occur. Other feature names may be translated:");
+        foreach (string name in database.GetProtectedNames()) sb.AppendLine("- " + name);
         sb.AppendLine();
         sb.AppendLine("CRITICAL RULES:");
         sb.AppendLine("1. PRESERVE PLACEHOLDERS: This project uses C# string formatting. You MUST preserve all placeholders like {0}, {1}, {n} exactly as they appear. Do not translate or modify anything inside the curly braces.");

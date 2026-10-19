@@ -132,24 +132,15 @@ public class LocalizationCategory {
     }
 }
 
-[Serializable]
-public sealed class SteamTranslationSettings {
-    public string GameTitle = "";
-    [Tooltip("One name per line. These names and the game title are preserved exactly.")]
-    [TextArea(2, 6)] public string ProtectedNames = "";
-    [OpenAIModelList] public string Model = "gpt-6.1-sol";
-    public ReasoningEffort Effort = ReasoningEffort.Medium;
-    public int OutputTokenBudget = OpenAITranslationModels.MaxCompletionTokens;
-    [LanguageList] public List<string> TargetLanguages = SteamLanguageList.All
-        .Where(l => l.langCode != "english").Select(l => l.langCode).ToList();
-}
-
 [CreateAssetMenu(fileName = "LocalizationMasterDatabase", menuName = "Localization/Master Database")]
 public class LocalizationMasterDatabase : ScriptableObject, ISerializationCallbackReceiver {
+    public string GameTitle = "";
     public string GameGenre;
     public string GameTone;
     [TextArea(3, 10)]
     public string GlobalContext;
+    [Tooltip("One name per line. These names and the game title are preserved exactly in all AI translations.")]
+    [TextArea(2, 6)] public string ProtectedNames = "";
 
     public List<LocalizationEntry> Entries = new List<LocalizationEntry>();
 
@@ -163,17 +154,38 @@ public class LocalizationMasterDatabase : ScriptableObject, ISerializationCallba
     public string OpenAIModel = OpenAITranslationModels.DefaultModel;
 
     public ReasoningEffort Effort = ReasoningEffort.Low;
-    [Tooltip("Output token budget per chunk, including reasoning tokens. Increase if responses exhaust the budget.")]
+    [Tooltip("Output token budget per request, including reasoning tokens. Increase if responses exhaust the budget.")]
     public int MaxCompletionTokens = OpenAITranslationModels.MaxCompletionTokens;
-
-    [Tooltip("Shared settings for Steam store page and event translations.")]
-    public SteamTranslationSettings SteamTranslation = new SteamTranslationSettings();
 
     public void OnBeforeSerialize() { }
 
     public void OnAfterDeserialize() {
-        if (SteamTranslation == null) SteamTranslation = new SteamTranslationSettings();
         if (AdditionalCategories == null) AdditionalCategories = new List<LocalizationCategory>();
+    }
+
+    public string[] GetProtectedNames() {
+        return new[] { GameTitle }.Concat((ProtectedNames ?? "").Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
+            .Select(s => (s ?? "").Trim()).Where(s => s.Length > 0).Distinct(StringComparer.Ordinal).ToArray();
+    }
+
+    public bool PreservesProtectedNames(string source, string translation, out string error) {
+        foreach (string name in GetProtectedNames()) {
+            if (CountName(source, name) != CountName(translation, name)) {
+                error = $"Changed protected name '{name}'.";
+                return false;
+            }
+        }
+        error = null;
+        return true;
+    }
+
+    private static int CountName(string text, string name) {
+        int count = 0, start = 0, index;
+        while ((index = (text ?? "").IndexOf(name, start, StringComparison.Ordinal)) >= 0) {
+            count++;
+            start = index + name.Length;
+        }
+        return count;
     }
 
     public IEnumerable<LocalizationEntry> AllEntries {
