@@ -141,7 +141,7 @@ public class SteamContentTranslatorWindow : EditorWindow {
             var document = new SteamContentCsv(CSVParser.LoadFromPath(sourcePath), type);
             var requests = SteamContentTranslation.CreateRequests(document, _database, _eventNotes);
             if (requests.Count == 0) { _status = "No translations needed for the selected languages."; return; }
-            if (requests.Count > 50000) throw new InvalidOperationException("A batch supports at most 50,000 requests.");
+            if (requests.Count > OpenAIBatchAPI.MaxRequests) throw new InvalidOperationException("A batch supports at most 50,000 requests.");
             var sources = requests.Select(r => new SubmittedSource {
                 Key = r.CustomId,
                 Hash = SteamContentTranslation.SourceHash(document, document.Entries[r.CustomId.Split('|')[0]]["english"], _database, _eventNotes)
@@ -149,22 +149,13 @@ public class SteamContentTranslatorWindow : EditorWindow {
             var apiKey = OpenAIBatchAPI.GetApiKey();
             if (string.IsNullOrEmpty(apiKey)) throw new InvalidOperationException("OPENAI_API_KEY missing in .env");
             string jsonlPath = Path.Combine(Path.GetTempPath(), $"translation_batch_{Guid.NewGuid():N}.jsonl");
-            try {
-                File.WriteAllLines(jsonlPath, requests.Select(r => r.Json), new UTF8Encoding(false));
-                if (new FileInfo(jsonlPath).Length > 200L * 1000 * 1000) throw new InvalidOperationException("Batch input exceeds 200 MB.");
-                string fileId = await OpenAIBatchAPI.UploadFileAsync(apiKey, jsonlPath);
-                if (string.IsNullOrEmpty(fileId)) throw new InvalidOperationException("Batch upload failed; see Console.");
-                string batchId = await OpenAIBatchAPI.CreateBatchAsync(apiKey, fileId);
-                if (string.IsNullOrEmpty(batchId)) throw new InvalidOperationException("Batch creation failed; see Console.");
-                _batchId = batchId;
-                _submittedBatchId = batchId;
-                _submittedSources = sources;
-                _submittedPath = sourcePath;
-                _submittedType = type;
-                _hasDocumentSnapshot = true;
-            } finally {
-                if (File.Exists(jsonlPath)) File.Delete(jsonlPath);
-            }
+            string batchId = await OpenAIBatchAPI.SubmitRequestsAsync(apiKey, requests, jsonlPath, "[Steam Translation]");
+            _batchId = batchId;
+            _submittedBatchId = batchId;
+            _submittedSources = sources;
+            _submittedPath = sourcePath;
+            _submittedType = type;
+            _hasDocumentSnapshot = true;
             _status = $"Batch submitted! ID: {_batchId}";
         } catch (Exception e) { _status = $"Error: {e.Message}"; }
         finally { _isProcessing = false; Repaint(); }
@@ -183,7 +174,11 @@ public class SteamContentTranslatorWindow : EditorWindow {
             if (string.IsNullOrEmpty(apiKey)) throw new InvalidOperationException("OPENAI_API_KEY missing in .env");
             var status = await OpenAIBatchAPI.CheckBatchStatusAsync(apiKey, _batchId);
             if (status == null) { _status = "Error: Batch not found."; return; }
-            if (status.Status != "completed" && status.Status != "expired" && status.Status != "cancelled") {
+            var results = await OpenAIBatchAPI.DownloadBatchResultsAsync(apiKey, status, $"[Steam Translation] Batch {_batchId}:", () => {
+                _status = "Downloading results...";
+                Repaint();
+            });
+            if (!status.IsTerminal) {
                 _status = status.Errors != null && status.Errors.Count > 0
                     ? $"Batch {status.Status}: {string.Join("; ", status.Errors)}" : $"Batch status: {status.Status}";
                 return;
@@ -192,12 +187,9 @@ public class SteamContentTranslatorWindow : EditorWindow {
                 _status = $"Batch {status.Status}: no successful output. Failed: {status.Failed}.";
                 return;
             }
-            _status = "Downloading results...";
-            Repaint();
-            string resultContent = await OpenAIBatchAPI.DownloadFileContentAsync(apiKey, status.OutputFileId);
-            if (resultContent == null) throw new InvalidOperationException("Result download failed; see Console.");
+            if (!results.CanProcess) throw new InvalidOperationException("Result download failed; see Console.");
             var document = new SteamContentCsv(CSVParser.LoadFromPath(sourcePath), _contentType);
-            int imported = MergeResults(document, resultContent);
+            int imported = MergeResults(document, results.Content);
             if (imported == 0) { _status = $"Batch {status.Status}: no new valid translations. Failed: {status.Failed}. See Console for skipped responses."; return; }
             string outputPath = EditorUtility.SaveFilePanel("Save translated Steam CSV", Path.GetDirectoryName(sourcePath), Path.GetFileNameWithoutExtension(sourcePath) + "_translated", "csv");
             if (string.IsNullOrEmpty(outputPath)) { _status = "Export cancelled. Process the batch again to export its results."; return; }

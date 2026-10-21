@@ -1,11 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Threading.Tasks;
-using UnityEditor;
 using UnityEngine;
 
 public class BatchStatusResult {
@@ -16,11 +16,76 @@ public class BatchStatusResult {
     public int Completed;
     public int Failed;
     public List<string> Errors = new List<string>();
+
+    public bool IsTerminal => Status == "completed" || Status == "failed" || Status == "expired" || Status == "cancelled";
 }
 
 public static class OpenAIBatchAPI {
+    internal const int MaxRequests = 50000;
+    internal const long MaxInputBytes = 200L * 1000 * 1000;
     private const string FILES_URL = "https://api.openai.com/v1/files";
     private const string BATCH_URL = "https://api.openai.com/v1/batches";
+
+    internal sealed class BatchResults {
+        public BatchStatusResult Status { get; }
+        public string Content { get; }
+
+        // No output is valid for an all-failed batch. A failed download must remain retryable.
+        public bool CanProcess => Status.IsTerminal && (string.IsNullOrEmpty(Status.OutputFileId) || Content != null);
+
+        internal BatchResults(BatchStatusResult status, string content) { Status = status; Content = content; }
+    }
+
+    internal static Task<string> SubmitRequestsAsync(string apiKey, IReadOnlyCollection<OpenAIJson.Request> requests,
+        string tempPath, string logPrefix) {
+        return SubmitRequestsAsync(requests, tempPath, logPrefix,
+            path => UploadFileAsync(apiKey, path), fileId => CreateBatchAsync(apiKey, fileId));
+    }
+
+    internal static async Task<string> SubmitRequestsAsync(IReadOnlyCollection<OpenAIJson.Request> requests,
+        string tempPath, string logPrefix, Func<string, Task<string>> upload, Func<string, Task<string>> createBatch) {
+        if (requests.Count == 0 || requests.Count > MaxRequests)
+            throw new ArgumentException("OpenAI batches require 1–50,000 requests.");
+        try {
+            File.WriteAllLines(tempPath, requests.Select(r => r.Json), new UTF8Encoding(false));
+            if (new FileInfo(tempPath).Length > MaxInputBytes)
+                throw new InvalidOperationException("Batch input exceeds 200 MB.");
+            string fileId = await upload(tempPath);
+            if (string.IsNullOrEmpty(fileId)) throw new InvalidOperationException("Batch upload failed; see Console.");
+            string batchId = await createBatch(fileId);
+            if (string.IsNullOrEmpty(batchId)) throw new InvalidOperationException("Batch creation failed; see Console.");
+            return batchId;
+        } finally {
+            try { if (File.Exists(tempPath)) File.Delete(tempPath); }
+            catch (IOException e) { Debug.LogWarning($"{logPrefix} Temporary batch cleanup failed: {e.Message}"); }
+        }
+    }
+
+    internal static Task<BatchResults> DownloadBatchResultsAsync(string apiKey, BatchStatusResult status,
+        string logPrefix, Action onDownloadingOutput = null) {
+        return DownloadBatchResultsAsync(status, logPrefix,
+            fileId => DownloadFileContentAsync(apiKey, fileId), onDownloadingOutput);
+    }
+
+    internal static async Task<BatchResults> DownloadBatchResultsAsync(BatchStatusResult status, string logPrefix,
+        Func<string, Task<string>> download, Action onDownloadingOutput = null) {
+        if (status.Errors != null) {
+            foreach (string error in status.Errors) Debug.LogError($"{logPrefix} {error}");
+        }
+        string content = null;
+        if (status.IsTerminal) {
+            // Report request failures even when downloading successful results fails.
+            if (!string.IsNullOrEmpty(status.ErrorFileId)) {
+                string errors = await download(status.ErrorFileId);
+                if (errors != null) LogBatchErrors(errors, logPrefix);
+            }
+            if (!string.IsNullOrEmpty(status.OutputFileId)) {
+                onDownloadingOutput?.Invoke();
+                content = await download(status.OutputFileId);
+            }
+        }
+        return new BatchResults(status, content);
+    }
 
     public static string GetEnvVar(string key) {
         string envPath = Path.GetFullPath(Path.Combine(Application.dataPath, "..", ".env"));
@@ -135,6 +200,19 @@ public static class OpenAIBatchAPI {
             }
         }
         return statusResult;
+    }
+
+    internal static void LogBatchErrors(string content, string logPrefix) {
+        foreach (var line in content.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)) {
+            try {
+                var result = OpenAIJson.ReadBatchResult(line);
+                if (OpenAITranslationModels.TryReadText(result, out _, out string error)) continue;
+                string httpStatus = result.response != null ? $", HTTP {result.response.status_code}" : "";
+                Debug.LogError($"{logPrefix} Request failed ({result.custom_id}{httpStatus}): {error}");
+            } catch (Exception e) {
+                Debug.LogError($"{logPrefix} Malformed batch error line: {e.Message}");
+            }
+        }
     }
 
     public static async Task<string> DownloadFileContentAsync(string apiKey, string fileId) {

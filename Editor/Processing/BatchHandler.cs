@@ -57,7 +57,7 @@ public static class BatchHandler {
                 }
             }
         }
-        if (requests.Count > 50000) throw new ArgumentException("OpenAI batches support at most 50,000 requests. Submit fewer entries or languages.");
+        if (requests.Count > OpenAIBatchAPI.MaxRequests) throw new ArgumentException("OpenAI batches support at most 50,000 requests. Submit fewer entries or languages.");
         return requests;
     }
 
@@ -92,22 +92,12 @@ public static class BatchHandler {
 
         Task.Run(async () => {
             try {
-                File.WriteAllText(tempPath, string.Join("\n", requests.Select(r => r.Json)));
-                if (new FileInfo(tempPath).Length > 200L * 1000 * 1000)
-                    throw new InvalidOperationException("OpenAI batch input exceeds 200 MB. Submit fewer entries or languages.");
-
-                string fileId = await OpenAIBatchAPI.UploadFileAsync(apiKey, tempPath);
-                if (string.IsNullOrEmpty(fileId)) return;
-
-                string batchId = await OpenAIBatchAPI.CreateBatchAsync(apiKey, fileId);
-                if (string.IsNullOrEmpty(batchId)) return;
+                string batchId = await OpenAIBatchAPI.SubmitRequestsAsync(apiKey, requests, tempPath, "[Localization]");
 
                 EditorMainThreadDispatcher.Enqueue(() => FinalizeBatchRequest(database, submissions, batchId));
             } catch (Exception e) {
                 Debug.LogError($"[Localization] Background task error: {e.Message}");
             } finally {
-                try { if (File.Exists(tempPath)) File.Delete(tempPath); }
-                catch (IOException e) { Debug.LogWarning($"[Localization] Temporary batch cleanup failed: {e.Message}"); }
                 EditorMainThreadDispatcher.Enqueue(() => Submitting.Remove(database));
             }
         });
@@ -145,47 +135,18 @@ public static class BatchHandler {
 
                 Debug.Log($"[Localization] Batch {batchId}: {result.Status} — Total: {result.Total}, Done: {result.Completed}, Failed: {result.Failed}");
 
-                if (result.Errors != null && result.Errors.Count > 0) {
-                    foreach (var err in result.Errors) {
-                        Debug.LogError($"[Localization] Batch {batchId} validation/processing error: {err}");
-                    }
-                }
+                var results = await OpenAIBatchAPI.DownloadBatchResultsAsync(apiKey, result, $"[Localization] Batch {batchId}:");
+                if (!results.CanProcess) return;
 
-                if (result.Status != "completed" && result.Status != "failed" &&
-                    result.Status != "expired" && result.Status != "cancelled") return;
-
-                string content = null;
-                if (!string.IsNullOrEmpty(result.OutputFileId)) {
-                    content = await OpenAIBatchAPI.DownloadFileContentAsync(apiKey, result.OutputFileId);
-                    // Keep pending entries intact if the download failed; a later check can retry.
-                    if (content == null) return;
-                }
-
-                if (!string.IsNullOrEmpty(result.ErrorFileId)) {
-                    string errContent = await OpenAIBatchAPI.DownloadFileContentAsync(apiKey, result.ErrorFileId);
-                    if (errContent != null) LogBatchErrors(errContent);
-                }
                 EditorMainThreadDispatcher.Enqueue(() => {
                     if (database == null) return;
-                    if (content != null) ApplyResultsToDatabase(database, content, batchId);
+                    if (results.Content != null) ApplyResultsToDatabase(database, results.Content, batchId);
                     ResetUnresolvedTranslations(database, batchId);
                 });
             } catch (Exception ex) {
                 Debug.LogError($"[Localization] Exception while checking batch {batchId}: {ex.Message}");
             }
         });
-    }
-
-    private static void LogBatchErrors(string content) {
-        foreach (var line in content.Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries)) {
-            try {
-                var result = OpenAIJson.ReadBatchResult(line);
-                OpenAITranslationModels.TryReadText(result, out _, out string error);
-                Debug.LogError($"[Localization] Request failed ({result.custom_id}): {error}");
-            } catch (Exception e) {
-                Debug.LogError($"[Localization] Malformed batch error line: {e.Message}");
-            }
-        }
     }
 
     private static void ApplyResultsToDatabase(LocalizationMasterDatabase database, string content, string batchId) {

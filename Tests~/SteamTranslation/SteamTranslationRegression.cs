@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Threading.Tasks;
 using UnityEditor;
 using UnityEngine;
 
@@ -38,7 +39,7 @@ public static class SteamTranslationRegression {
     public static void Run() {
         string report = Path.Combine(Path.GetDirectoryName(Application.dataPath), "result.txt");
         try {
-            DatabaseLifecycle(); RoundTrips(); StoreTranslationScope(); Validation(); RequestsAndSnapshots(); SharedRequests(); MergeResults(); SettingsPersistence();
+            DatabaseLifecycle(); RoundTrips(); StoreTranslationScope(); Validation(); RequestsAndSnapshots(); SharedRequests(); MergeResults(); BatchErrorLogging(); BatchSubmission(); BatchDownloads(); SettingsPersistence();
             string[] args = Environment.GetCommandLineArgs();
             int fileArg = Array.IndexOf(args, "-steamEventCsv");
             if (fileArg >= 0) RealExport(args[fileArg + 1]);
@@ -306,6 +307,132 @@ public static class SteamTranslationRegression {
         Check((int)merge.Invoke(window, new object[] { sameSource, Result("title|german", "Hallo") }) == 0, "Reject changed Global Context.");
         UnityEngine.Object.DestroyImmediate(window);
         UnityEngine.Object.DestroyImmediate(database);
+    }
+
+    private static void BatchErrorLogging() {
+        var errors = new List<string>();
+        Application.LogCallback onLog = (message, stackTrace, type) => {
+            if (type == LogType.Error) errors.Add(message);
+        };
+        string serverError = ",\"response\":{\"status_code\":500,\"body\":{\"error\":{\"message\":\"The server had an error while processing your request.\"}}},\"error\":null}";
+        string content = "{\"custom_id\":\"title|russian\"" + serverError + "\r\nnot json\r\n"
+            + "{\"custom_id\":\"title|vietnamese\"" + serverError + "\n"
+            + "{\"custom_id\":\"body|german\",\"response\":null,\"error\":{\"message\":\"Batch request expired.\"}}\n"
+            + Result("title|german", "Hallo");
+        Application.logMessageReceived += onLog;
+        try {
+            OpenAIBatchAPI.LogBatchErrors(content, "[Steam Translation] Batch test-batch:");
+        } finally {
+            Application.logMessageReceived -= onLog;
+        }
+        Check(errors.Count == 4, "Log each failed request and malformed line as an error; ignore successful responses.");
+        Check(errors.Any(e => e.Contains("title|russian, HTTP 500") && e.Contains("The server had an error")), "Log Russian HTTP failure with request ID and server message.");
+        Check(errors.Any(e => e.Contains("title|vietnamese, HTTP 500") && e.Contains("The server had an error")), "Continue logging Vietnamese failure after malformed error line.");
+        Check(errors.Any(e => e.Contains("body|german") && e.Contains("Batch request expired.")), "Log top-level batch errors without HTTP responses.");
+        Check(errors.All(e => e.StartsWith("[Steam Translation] Batch test-batch:", StringComparison.Ordinal)), "Identify the batch in every logged error.");
+    }
+
+    private static void BatchSubmission() {
+        var request = new OpenAIJson.Request("title|german", "{\"custom_id\":\"title|german\",\"text\":\"Grüße 世界\"}");
+        var requests = new[] { request, new OpenAIJson.Request("body|german", "{\"custom_id\":\"body|german\"}") };
+        string path = Path.Combine(Path.GetTempPath(), "localization_regression_" + Guid.NewGuid().ToString("N") + ".jsonl");
+        int uploads = 0, creates = 0;
+        Func<string, Task<string>> upload = file => {
+            uploads++;
+            Check(file == path && File.Exists(file), "Submission uploads the generated input file.");
+            byte[] bytes = File.ReadAllBytes(file);
+            Check(!(bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF), "Batch JSONL has no UTF-8 BOM.");
+            Check(File.ReadAllLines(file).SequenceEqual(requests.Select(r => r.Json)), "Submission preserves Unicode and each request's exact JSON.");
+            return Task.FromResult("file-test");
+        };
+        Func<string, Task<string>> create = fileId => {
+            creates++;
+            Check(fileId == "file-test", "Create the batch from the uploaded file ID.");
+            return Task.FromResult("batch-test");
+        };
+        try {
+            string batchId = OpenAIBatchAPI.SubmitRequestsAsync(requests, path, "[Test]", upload, create).GetAwaiter().GetResult();
+            Check(batchId == "batch-test" && uploads == 1 && creates == 1, "Upload and create exactly one batch.");
+            Check(!File.Exists(path), "Remove temporary input after successful submission.");
+
+            foreach (bool failUpload in new[] { true, false }) {
+                int createCalls = 0;
+                string failure = null;
+                try {
+                    OpenAIBatchAPI.SubmitRequestsAsync(requests, path, "[Test]",
+                        file => Task.FromResult(failUpload ? null : "file-test"),
+                        fileId => { createCalls++; return Task.FromResult<string>(null); }).GetAwaiter().GetResult();
+                } catch (InvalidOperationException e) { failure = e.Message; }
+                Check(failure == (failUpload ? "Batch upload failed; see Console." : "Batch creation failed; see Console."), "Preserve the Steam submission failure message.");
+                Check(createCalls == (failUpload ? 0 : 1), "Never create a batch after upload failure.");
+                Check(!File.Exists(path), "Remove temporary input after submission failure.");
+            }
+
+            bool threw = false;
+            try {
+                OpenAIBatchAPI.SubmitRequestsAsync(requests, path, "[Test]",
+                    file => throw new IOException("Simulated connection failure."), create).GetAwaiter().GetResult();
+            } catch (IOException) { threw = true; }
+            Check(threw && !File.Exists(path), "Clean up input and propagate unexpected submission errors.");
+
+            foreach (int count in new[] { 0, OpenAIBatchAPI.MaxRequests + 1 }) {
+                bool rejected = false;
+                try {
+                    OpenAIBatchAPI.SubmitRequestsAsync(Enumerable.Repeat(request, count).ToArray(), path, "[Test]", upload, create).GetAwaiter().GetResult();
+                } catch (ArgumentException) { rejected = true; }
+                Check(rejected && !File.Exists(path) && uploads == 1 && creates == 1, "Reject invalid request counts before writing or contacting the API.");
+            }
+        } finally {
+            if (File.Exists(path)) File.Delete(path);
+        }
+    }
+
+    private static void BatchDownloads() {
+        var calls = new List<string>();
+        var errors = new List<string>();
+        Application.LogCallback onLog = (message, stackTrace, type) => { if (type == LogType.Error) errors.Add(message); };
+        Application.logMessageReceived += onLog;
+        try {
+            var status = new BatchStatusResult { Status = "completed", ErrorFileId = "errors", OutputFileId = "output" };
+            Func<string, Task<string>> download = fileId => {
+                calls.Add(fileId);
+                return Task.FromResult(fileId == "errors"
+                    ? "{\"custom_id\":\"title|russian\",\"error\":{\"message\":\"Request failed.\"}}"
+                    : Result("title|german", "Hallo"));
+            };
+            var result = OpenAIBatchAPI.DownloadBatchResultsAsync(status, "[Test] Batch test:", download,
+                () => calls.Add("downloading")).GetAwaiter().GetResult();
+            Check(calls.SequenceEqual(new[] { "errors", "downloading", "output" }), "Log failed requests before downloading successful output; preserve download progress timing.");
+            Check(result.CanProcess && result.Content == Result("title|german", "Hallo"), "Return successful results from a partially failed batch unchanged.");
+            Check(errors.Count == 1 && errors[0].Contains("title|russian"), "Report failed requests alongside successful results.");
+
+            errors.Clear();
+            result = OpenAIBatchAPI.DownloadBatchResultsAsync(status, "[Test] Batch test:",
+                fileId => fileId == "errors" ? download(fileId) : Task.FromResult<string>(null)).GetAwaiter().GetResult();
+            Check(!result.CanProcess && result.Content == null, "A failed output download cannot resolve or reset pending translations.");
+            Check(errors.Count == 1 && errors[0].Contains("title|russian"), "Report request errors even if output download fails.");
+
+            result = OpenAIBatchAPI.DownloadBatchResultsAsync(status, "[Test]",
+                fileId => Task.FromResult(fileId == "errors" ? null : "")).GetAwaiter().GetResult();
+            Check(result.CanProcess && result.Content == "", "Distinguish an empty output from a failed download; error-file failure does not discard successful output.");
+
+            foreach (string terminal in new[] { "completed", "failed", "expired", "cancelled" }) {
+                calls.Clear();
+                result = OpenAIBatchAPI.DownloadBatchResultsAsync(new BatchStatusResult { Status = terminal }, "[Test]", download).GetAwaiter().GetResult();
+                Check(result.CanProcess && result.Content == null && calls.Count == 0, "Terminal batch without output still allows unresolved translations to be reset: " + terminal);
+            }
+            foreach (string pending in new[] { "validating", "in_progress", "finalizing", "cancelling" }) {
+                calls.Clear();
+                errors.Clear();
+                result = OpenAIBatchAPI.DownloadBatchResultsAsync(new BatchStatusResult {
+                    Status = pending, ErrorFileId = "errors", OutputFileId = "output", Errors = new List<string> { "Validation diagnostic." }
+                }, "[Test]", download, () => calls.Add("downloading")).GetAwaiter().GetResult();
+                Check(!result.CanProcess && calls.Count == 0, "Do not download or process unfinished batches: " + pending);
+                Check(errors.SequenceEqual(new[] { "[Test] Validation diagnostic." }), "Log batch-level errors even before the batch finishes.");
+            }
+        } finally {
+            Application.logMessageReceived -= onLog;
+        }
     }
 
     private static void SettingsPersistence() {
