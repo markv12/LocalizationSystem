@@ -21,11 +21,12 @@ $version = (Get-Item -LiteralPath $UnityEditorPath).VersionInfo.ProductVersion
 [IO.File]::WriteAllText((Join-Path $projectPath 'ProjectSettings/ProjectVersion.txt'), "m_EditorVersion: $version`n")
 $sourceFiles = @(
     'Runtime/Core/CSVParser.cs', 'Runtime/Core/SteamLanguageList.cs', 'Runtime/Core/LanguageData.cs', 'Runtime/Core/LanguageListAsset.cs',
+    'Runtime/Core/Localizer.Categories.cs', 'Runtime/Core/LocalizedPhraseBag.cs',
     'Editor/Database/LocalizationMasterDatabase.cs', 'Editor/Database/LanguageListDrawer.cs',
     'Editor/OpenAI/OpenAIJson.cs', 'Editor/OpenAI/OpenAITranslationModels.cs', 'Editor/OpenAI/OpenAIBatchAPI.cs',
     'Editor/OpenAI/SteamContentCsv.cs', 'Editor/OpenAI/SteamContentTranslation.cs',
     'Editor/OpenAI/SteamContentTranslatorWindow.cs', 'Editor/Processing/BatchHandler.cs',
-    'Editor/Processing/LocalizationProcessor.cs', 'Editor/Processing/EditorMainThreadDispatcher.cs'
+    'Editor/Processing/LocalizationProcessor.cs', 'Editor/Processing/LocalizationCategoryBaker.cs', 'Editor/Processing/EditorMainThreadDispatcher.cs'
 )
 foreach ($source in $sourceFiles) { Copy-Item -LiteralPath (Join-Path $repoRoot $source) -Destination $editorPath -Force }
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'SteamTranslationRegression.cs') -Destination $editorPath -Force

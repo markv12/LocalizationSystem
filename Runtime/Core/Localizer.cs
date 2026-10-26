@@ -35,6 +35,7 @@ public static partial class Localizer {
         languageList = null;
         languageLoaded = false;
         LanguageChangedEvent = null;
+        ClearCategoryCache();
     }
 
     public static List<string> LanguageList {

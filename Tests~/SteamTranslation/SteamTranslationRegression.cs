@@ -8,10 +8,11 @@ using System.Threading.Tasks;
 using UnityEditor;
 using UnityEngine;
 
-// Only the runtime resource constants are needed in this isolated editor project.
-public static class Localizer {
+// Category APIs use production code; text/font lookup is outside this isolated project.
+public static partial class Localizer {
     public const string DEFAULT_LANGUAGE = "english";
     public const string LANGUAGE_LIST_KEY = "LanguageList";
+    public static string Format(string key, params object[] args) => throw new NotSupportedException("Text lookup is not included in this harness.");
 }
 
 public static class SteamTranslationRegression {
@@ -36,7 +37,7 @@ public static class SteamTranslationRegression {
         return database;
     }
 
-    public static void Run() {
+    public static async void Run() {
         string report = Path.Combine(Path.GetDirectoryName(Application.dataPath), "result.txt");
         try {
             DatabaseLifecycle(); RoundTrips(); StoreTranslationScope(); Validation(); RequestsAndSnapshots(); SharedRequests(); MergeResults(); BatchErrorLogging(); BatchSubmission(); BatchDownloads(); SettingsPersistence();
@@ -45,6 +46,7 @@ public static class SteamTranslationRegression {
             if (fileArg >= 0) RealExport(args[fileArg + 1]);
             int storeArg = Array.IndexOf(args, "-steamStoreCsv");
             if (storeArg >= 0) RealStoreExport(args[storeArg + 1]);
+            await CategoryBaking();
             File.WriteAllText(report, $"PASS: {_assertions} assertions using Unity {Application.unityVersion}.\n");
             EditorApplication.Exit(0);
         } catch (Exception e) {
@@ -468,6 +470,96 @@ public static class SteamTranslationRegression {
         Check(Directory.GetFiles(Application.dataPath, "*.asset", SearchOption.AllDirectories).Length == 1, "No separate Steam settings asset created.");
         UnityEngine.Object.DestroyImmediate(decoded);
         UnityEngine.Object.DestroyImmediate(reopened);
+    }
+
+    private static Task NextEditorDelay() {
+        var completion = new TaskCompletionSource<bool>();
+        EditorApplication.delayCall += () => completion.SetResult(true);
+        return completion.Task;
+    }
+
+    private static async Task CategoryBaking() {
+        var database = LocalizationMasterDatabase.LoadDatabase();
+        database.TargetLanguages = new List<string> { "german" };
+        database.Entries.Clear();
+        var first = new LocalizationEntry { Key = "reaction.first", EnglishText = "First" };
+        first.Translations.Add(new LanguageTranslation {
+            LanguageCode = "german", TranslatedText = "Erste", Status = TranslationStatus.Translated
+        });
+        var second = new LocalizationEntry { Key = "reaction.second", EnglishText = "Second" };
+        var whitespace = new LocalizationEntry { Key = "reaction.space", EnglishText = " " };
+        var empty = new LocalizationEntry { Key = "reaction.empty", EnglishText = "" };
+        var category = new LocalizationCategory("Reactions") {
+            Entries = new List<LocalizationEntry> { first, second, whitespace, empty }
+        };
+        database.AdditionalCategories = new List<LocalizationCategory> { category, new LocalizationCategory("Empty") };
+        EditorUtility.SetDirty(database);
+        LocalizationProcessor.BakeAssets(database);
+
+        const string cataloguePath = "Assets/Resources/LocalizationCategories.json";
+        const string englishPath = "Assets/Resources/Languages/english.asset";
+        var keys = Localizer.GetCategoryKeys("REACTIONS");
+        Check(keys.SequenceEqual(new[] { first.Key, second.Key, whitespace.Key }), "Catalogue and English baking share entry eligibility, including whitespace text.");
+        Check(Localizer.GetCategoryKeys("Empty").Count == 0 && Localizer.GetCategoryKeys("missing").Count == 0
+            && Localizer.GetCategoryKeys(null).Count == 0, "Empty, unknown, and null categories are empty.");
+        Check(!Localizer.TryGetRandomKey("missing", out var missing) && missing == null, "Unknown category has no random key.");
+        Check(!new LocalizedPhraseBag("Empty").TryNext(out _), "Empty phrase bag has no key.");
+        Check(((IList<string>)keys).IsReadOnly, "Category key collections are read-only.");
+        var english = AssetDatabase.LoadAssetAtPath<LanguageData>(englishPath);
+        Check(keys.All(k => english.ToDictionary().ContainsKey(k)), "Every category key resolves in baked English.");
+        Check(AssetDatabase.LoadAssetAtPath<LanguageData>("Assets/Resources/Languages/german.asset").ToDictionary()[first.Key] == "Erste", "Full bake preserves approved language text.");
+
+        var bag = new LocalizedPhraseBag("Reactions");
+        string previous = null;
+        for (int cycle = 0; cycle < 10; cycle++) {
+            var seen = new HashSet<string>();
+            for (int i = 0; i < keys.Count; i++) {
+                Check(bag.TryNext(out var key) && keys.Contains(key) && seen.Add(key), "Each phrase occurs once per cycle.");
+                Check(key != previous, "Phrase bag avoids adjacent repeats, including cycle boundaries.");
+                previous = key;
+            }
+        }
+
+        // A repeat bake must not rewrite otherwise unchanged runtime outputs.
+        var stamp = new DateTime(2001, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        File.SetLastWriteTimeUtc(englishPath, stamp);
+        File.SetLastWriteTimeUtc(cataloguePath, stamp);
+        LocalizationProcessor.BakeAssets(database);
+        Check(File.GetLastWriteTimeUtc(englishPath) == stamp && File.GetLastWriteTimeUtc(cataloguePath) == stamp, "Unchanged output files are not rewritten.");
+
+        string originalCatalogue = File.ReadAllText(cataloguePath);
+        category.Entries.Add(new LocalizationEntry { Key = first.Key, EnglishText = "Duplicate" });
+        bool rejected = false;
+        try { LocalizationProcessor.BakeAssets(database); } catch (UnityEditor.Build.BuildFailedException) { rejected = true; }
+        category.Entries.RemoveAt(category.Entries.Count - 1);
+        Check(rejected && File.ReadAllText(cataloguePath) == originalCatalogue, "Invalid keys fail before publishing a catalogue.");
+
+        first.Key = "reaction.renamed";
+        first.EnglishText = "Updated first";
+        EditorUtility.SetDirty(database);
+        // The pre-build path must update text as well as membership without a manual bake.
+        new LocalizationCategoryBaker().OnPreprocessBuild(null);
+        Check(Localizer.GetCategoryKeys("Reactions").Contains(first.Key), "Pre-build bake invalidates the category cache.");
+        english = AssetDatabase.LoadAssetAtPath<LanguageData>(englishPath);
+        Check(english.ToDictionary()[first.Key] == "Updated first" && !english.ToDictionary().ContainsKey("reaction.first"), "Pre-build bake synchronizes renamed keys and English text.");
+
+        // Let any earlier import-triggered bake finish, then exercise a non-default filename.
+        await NextEditorDelay();
+        string oldPath = AssetDatabase.GetAssetPath(database);
+        string renamedPath = Path.GetDirectoryName(oldPath).Replace('\\', '/') + "/GameStrings.asset";
+        Check(string.IsNullOrEmpty(AssetDatabase.MoveAsset(oldPath, renamedPath)), "Database can be renamed.");
+        await NextEditorDelay();
+        database = LocalizationMasterDatabase.LoadDatabase();
+        Check(AssetDatabase.GetAssetPath(database) == renamedPath, "Database discovery supports renamed assets.");
+        category = database.AdditionalCategories[0];
+        category.Entries.Add(new LocalizationEntry { Key = "reaction.imported", EnglishText = "Imported" });
+        EditorUtility.SetDirty(database);
+        AssetDatabase.SaveAssetIfDirty(database);
+        AssetDatabase.ImportAsset(renamedPath, ImportAssetOptions.ForceUpdate);
+        await NextEditorDelay();
+        Check(Localizer.GetCategoryKeys("Reactions").Contains("reaction.imported"), "Importing a renamed database automatically refreshes categories.");
+        english = AssetDatabase.LoadAssetAtPath<LanguageData>(englishPath);
+        Check(english.ToDictionary()["reaction.imported"] == "Imported", "Automatic import bake includes matching English text.");
     }
 
     private static void RealExport(string path) {

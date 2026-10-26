@@ -171,8 +171,13 @@ public static class LocalizationProcessor {
         }
     }
 
+    internal static bool HasEnglishText(LocalizationEntry entry) => !string.IsNullOrEmpty(entry.EnglishText);
+
     public static void BakeAssets(LocalizationMasterDatabase database) {
         if (database == null) return;
+        // Validate everything before changing either runtime output.
+        string categoryJson = LocalizationCategoryBaker.CreateCatalogue(database);
+        var entries = database.AllEntries.ToList();
 
         string folderPath = "Assets/Resources/Languages";
         if (!AssetDatabase.IsValidFolder(folderPath)) {
@@ -200,14 +205,12 @@ public static class LocalizationProcessor {
                 isNew = true;
             }
 
-            data.LanguageCode = lang;
-
             bool isEnglish = lang.Equals(Localizer.DEFAULT_LANGUAGE, System.StringComparison.OrdinalIgnoreCase);
 
-            var bakedData = database.AllEntries
+            var bakedData = entries
                 .Select(e => {
                     if (isEnglish) {
-                        return new { e.Key, Text = e.EnglishText, ShouldInclude = !string.IsNullOrEmpty(e.EnglishText) };
+                        return new { e.Key, Text = e.EnglishText, ShouldInclude = HasEnglishText(e) };
                     } else {
                         var translation = e.GetTranslation(lang);
                         return new {
@@ -220,8 +223,14 @@ public static class LocalizationProcessor {
                 .Where(x => x.ShouldInclude)
                 .ToList();
 
-            data.Keys = bakedData.Select(x => x.Key).ToArray();
-            data.Values = bakedData.Select(x => x.Text).ToArray();
+            string[] keys = bakedData.Select(x => x.Key).ToArray();
+            string[] values = bakedData.Select(x => x.Text).ToArray();
+            if (!isNew && data.LanguageCode == lang && data.Keys != null && data.Keys.SequenceEqual(keys)
+                && data.Values != null && data.Values.SequenceEqual(values)) continue;
+
+            data.LanguageCode = lang;
+            data.Keys = keys;
+            data.Values = values;
 
             if (isNew) {
                 AssetDatabase.CreateAsset(data, assetPath);
@@ -237,11 +246,12 @@ public static class LocalizationProcessor {
             listAsset = ScriptableObject.CreateInstance<LanguageListAsset>();
             listAsset.LanguageCodes = sortedCodes;
             AssetDatabase.CreateAsset(listAsset, listAssetPath);
-        } else {
+        } else if (listAsset.LanguageCodes == null || !listAsset.LanguageCodes.SequenceEqual(sortedCodes)) {
             listAsset.LanguageCodes = sortedCodes;
             EditorUtility.SetDirty(listAsset);
         }
 
+        LocalizationCategoryBaker.WriteCatalogue(categoryJson);
         AssetDatabase.SaveAssets();
         AssetDatabase.Refresh();
         Debug.Log("[Localization] Bake complete (including English)!");

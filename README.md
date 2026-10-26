@@ -134,3 +134,35 @@ Unity regression checks, including an optional check against a real event export
 When new characters are introduced:
 1. In `LocalizationMasterDatabase`, click **Rebuild Localization Font**.
 2. The tool extracts all characters in use across all languages, merges the necessary Noto font subsets, and bakes the SDF font asset automatically.
+
+
+## Random text from additional categories
+
+Additional Categories in the master database are baked into one shared
+`Resources/LocalizationCategories.json` catalogue. Per-language assets remain
+flat key/value arrays. Every bake regenerates both the catalogue and language
+assets, including automatic bakes when a master database asset is imported or
+moved (regardless of filename), after an editor reload, and before player builds.
+Unchanged output assets are preserved.
+
+```csharp
+if (Localizer.TryGetRandomKey("Crowd.Reactions", out string key)) {
+    string line = Localizer.GetText(key);
+}
+
+// All format strings in this category must share the same argument meanings.
+if (Localizer.TryGetRandomText("Hints.WithCount", out string hint, count)) {
+    ShowHint(hint);
+}
+
+// For no repeats within a cycle, keep one bag per consumer/category.
+var bag = new LocalizedPhraseBag("Crowd.Reactions");
+if (bag.TryNext(out string phraseKey)) ShowLine(Localizer.GetText(phraseKey));
+```
+
+`GetCategoryKeys` returns a read-only list. Unknown/empty categories return an
+empty list; Try methods return false. Selection uses the same IDs for every
+language, preserving normal English fallback. Keys must be globally unique and
+category names must be unique (case-insensitively). A category's entries should
+use the same formatting argument contract; translations may reorder numbered
+placeholders. Keep grammar-dependent substitutions in complete translated lines.
