@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
 
-// Text-only Chat Completions + Structured Outputs capabilities, verified 2026-10-04.
+// Text-only Chat Completions + Structured Outputs capabilities; Terra verified 2026-10-26.
 // Do not infer capabilities from a model prefix: new models can have different contracts.
 public static class OpenAITranslationModels {
     public const string Endpoint = "/v1/chat/completions";
@@ -13,6 +13,7 @@ public static class OpenAITranslationModels {
     private static readonly Dictionary<string, string[]> Models = new Dictionary<string, string[]> {
         { "gpt-6-astra", new[] { "low", "medium", "high", "xhigh", "max" } },
         { "gpt-6.1-sol", new[] { "low", "medium", "high", "xhigh", "max" } },
+        { "gpt-6.1-terra", new[] { "none", "low", "medium", "high", "xhigh", "max" } },
         { "gpt-6-sol", new[] { "none", "low", "medium", "high", "xhigh", "max" } },
         { "gpt-6-luna", new[] { "none", "low", "medium", "high", "xhigh", "max" } },
         { "gpt-5.6-luna", new[] { "none", "low", "medium", "high", "xhigh", "max" } },

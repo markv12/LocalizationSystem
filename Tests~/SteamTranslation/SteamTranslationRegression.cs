@@ -222,7 +222,7 @@ public static class SteamTranslationRegression {
 
     private static void SharedRequests() {
         var database = Database();
-        database.OpenAIModel = "gpt-6-sol";
+        database.OpenAIModel = "gpt-6.1-terra";
         database.Effort = ReasoningEffort.High;
         database.MaxCompletionTokens = 12345;
         database.TargetLanguages = new List<string> { "german", "japanese" };
